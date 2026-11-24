@@ -34,7 +34,7 @@ A short scan should collect:
 - System cache and kernel pools.
 - System CPU and per-process CPU over a sampling interval.
 - Per-process working set and private bytes.
-- Disk read/write latency and queue data, when a supported counter is available.
+- Disk read/write latency, queue, active time, and Windows-volume free space.
 - Free space on the Windows volume.
 - Startup entries and their source, initially read-only.
 - Power mode and whether the device is on AC or battery, where supported.
@@ -157,9 +157,10 @@ Report the median, not the best run. If the result is within measurement noise o
 
 ### M1 - Trusted diagnosis
 - Per-process CPU measurement.
+- Low-frequency disk metrics and system-volume free-space reading.
 - Adaptive low-overhead sampling.
 - Read-only startup inventory.
-- Disk latency/queue diagnostics.
+- Disk latency/queue and system-volume space diagnostics.
 - Free-space check.
 - Clear bottleneck explanation.
 

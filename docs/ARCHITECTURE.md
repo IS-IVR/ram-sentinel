@@ -11,7 +11,7 @@
 אוספים מקומיים וקריאה בלבד:
 - Memory: Total / Available / Commit / Commit Limit / System Cache / Kernel pools.
 - CPU: GetSystemTimes, TotalProcessorTime לפי תהליך.
-- Disk: נפח פנוי, latency ו-queue באמצעות PDH בקצב נמוך.
+- Disk: נפח פנוי בכונן המערכת, latency ו-queue באמצעות PDH בקצב נמוך.
 - Startup: Run keys, Startup folders ובהמשך Logon Scheduled Tasks.
 - Power: Power mode / AC state כאשר אפשר לקרוא זאת באופן אמין.
 
@@ -53,10 +53,12 @@
 - MemorySnapshot
 - MemoryPressureEvaluator
 - CpuUsageCalculator
+- DiskMetricsSnapshot
 
 ### RamSentinel.App
 - WindowsMemoryProvider
 - WindowsCpuUsageProvider
+- WindowsDiskMetricsProvider
 - StartupInventoryProvider (קריאה בלבד)
 - StartupManager
 - MainForm
@@ -97,12 +99,13 @@ CPU% = DeltaProcessCpuTime / (DeltaWallTime * LogicalProcessorCount) * 100
 - כשהחלון פתוח: מדדי מערכת כל 10 שניות.
 - רשימת תהליכים כל 30 שניות.
 - Startup Inventory נסרק בעת פתיחת הלשונית או רענון ידני.
+- Disk PDH counters ונפח כונן המערכת נקראים כחלק ממדידת המערכת כל 10-30 שניות.
 - מדדי Disk דרך PDH, כשימומשו, ייאספו לכל היותר פעם בשנייה ובדרך כלל כל 5-10 שניות.
 - אין polling מהיר או timers תכופים כשהיישום במגש.
 
 ## אבחון דיסק
 
-PDH מספק ממשק איסוף מוני ביצועים. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-Disk Transfers/sec לפי זמינות המונים. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
+PDH מספק ממשק איסוף מוני ביצועים. המימוש הנוכחי קורא PhysicalDisk(_Total) Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-% Disk Time, וכן בודק את נפח הכונן שבו מותקן Windows באמצעות DriveInfo, בלי לסרוק את תוכנו. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-Disk Transfers/sec לפי זמינות המונים. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
 
 ## פעולות Windows מובנות
 

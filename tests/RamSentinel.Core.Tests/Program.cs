@@ -8,7 +8,8 @@ var checks = new List<(string Name, Action Run)>
     ("A recovery resets the sustained-pressure timer", TestRecoveryResetsTimer),
     ("High commit pressure is detected", TestCommitPressure),
     ("One busy core is normalized across logical processors", TestCpuNormalization),
-    ("Invalid process CPU deltas are rejected", TestInvalidCpuDelta)
+    ("Invalid process CPU deltas are rejected", TestInvalidCpuDelta),
+    ("System drive free space is calculated safely", TestSystemDriveFreePercent)
 };
 
 int failures = 0;
@@ -104,6 +105,33 @@ static void TestInvalidCpuDelta()
         elapsedWallTime: TimeSpan.Zero,
         logicalProcessorCount: 4);
     Assert(zeroElapsed is null, "A zero elapsed time should be rejected.");
+}
+
+static void TestSystemDriveFreePercent()
+{
+    var disk = new DiskMetricsSnapshot(
+        CapturedAt: DateTimeOffset.UtcNow,
+        ReadLatencyMilliseconds: 12.5,
+        WriteLatencyMilliseconds: 8.1,
+        QueueLength: 0.2,
+        ActiveTimePercent: 15,
+        SystemDriveFreeBytes: 50,
+        SystemDriveTotalBytes: 200);
+
+    Assert(disk.SystemDriveFreePercent.HasValue &&
+           Math.Abs(disk.SystemDriveFreePercent.Value - 25d) < 0.001,
+        $"Expected 25% free, got {disk.SystemDriveFreePercent}");
+
+    var unavailable = new DiskMetricsSnapshot(
+        CapturedAt: DateTimeOffset.UtcNow,
+        ReadLatencyMilliseconds: null,
+        WriteLatencyMilliseconds: null,
+        QueueLength: null,
+        ActiveTimePercent: null,
+        SystemDriveFreeBytes: null,
+        SystemDriveTotalBytes: null);
+
+    Assert(unavailable.SystemDriveFreePercent is null, "Missing drive data should stay unavailable.");
 }
 
 static MemorySnapshot CreateSnapshot(double availablePercent, uint memoryLoad, double commitPercent)
