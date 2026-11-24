@@ -7,6 +7,7 @@ namespace RamSentinel.App.UI;
 internal sealed class MainForm : Form
 {
     private readonly WindowsMemoryProvider _memoryProvider = new();
+    private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
     private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 10_000 };
     private readonly NotifyIcon _notifyIcon;
@@ -16,6 +17,7 @@ internal sealed class MainForm : Form
     private readonly Label _availableLabel = new();
     private readonly Label _cacheLabel = new();
     private readonly Label _commitLabel = new();
+    private readonly Label _cpuLabel = new();
     private readonly Label _explanationLabel = new();
     private readonly ListView _processList = new();
     private readonly CheckBox _startWithWindowsCheckBox = new();
@@ -105,13 +107,13 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Height = 82,
-            ColumnCount = 5,
+            ColumnCount = 6,
             RowCount = 1,
             Padding = new Padding(8, 3, 8, 3)
         };
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < 6; i++)
         {
-            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 6F));
         }
 
         metrics.Controls.Add(CreateMetric("סה״כ RAM", _totalLabel), 0, 0);
@@ -119,6 +121,7 @@ internal sealed class MainForm : Form
         metrics.Controls.Add(CreateMetric("זמין ל-Windows", _availableLabel), 2, 0);
         metrics.Controls.Add(CreateMetric("Cache מערכת", _cacheLabel), 3, 0);
         metrics.Controls.Add(CreateMetric("Commit", _commitLabel), 4, 0);
+        metrics.Controls.Add(CreateMetric("CPU", _cpuLabel), 5, 0);
 
         _processList.Dock = DockStyle.Fill;
         _processList.View = View.Details;
@@ -206,6 +209,16 @@ internal sealed class MainForm : Form
         try
         {
             MemorySnapshot snapshot = _memoryProvider.Read();
+            double? cpuPercent = null;
+            try
+            {
+                cpuPercent = _cpuUsageProvider.ReadPercent();
+                _cpuLabel.Text = cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד...";
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                _cpuLabel.Text = "לא זמין";
+            }
 
             _totalLabel.Text = FormatBytes(snapshot.TotalPhysicalBytes);
             _usedLabel.Text = FormatBytes(snapshot.UsedPhysicalBytes);
@@ -219,7 +232,7 @@ internal sealed class MainForm : Form
             _statusLabel.Text = level switch
             {
                 MemoryPressureLevel.Normal =>
-                    $"תקין · {snapshot.MemoryLoadPercent}% מה-RAM בשימוש · {snapshot.ProcessCount} תהליכים",
+                    $"תקין · RAM {snapshot.MemoryLoadPercent}% · CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד")} · {snapshot.ProcessCount} תהליכים",
                 MemoryPressureLevel.Warning =>
                     $"עומס זיכרון גבוה · {snapshot.MemoryLoadPercent}% · בודק אם מדובר במצב מתמשך",
                 MemoryPressureLevel.High =>
@@ -237,7 +250,7 @@ internal sealed class MainForm : Form
             }
 
             _lastPressureLevel = level;
-            _notifyIcon.Text = $"RAM Sentinel | RAM {snapshot.MemoryLoadPercent}% | פנוי {snapshot.AvailablePercent:0}%";
+            _notifyIcon.Text = $"RAM {snapshot.MemoryLoadPercent}% | CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "...")}";
 
             if (DateTimeOffset.Now - _lastProcessRefresh >= TimeSpan.FromSeconds(30))
             {
