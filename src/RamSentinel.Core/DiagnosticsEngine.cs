@@ -265,8 +265,12 @@ public sealed class DiagnosticsEngine
             return false;
         }
 
-        double? latency = GetDiskLatency(sample.Disk);
-        if (!latency.HasValue || latency.Value < _options.PagingWatchDiskLatencyMilliseconds)
+        // Page Reads/sec is read activity, so corroborate it with read latency
+        // specifically. High write latency alone must not be attributed to paging reads.
+        double? readLatency = sample.Disk.ReadLatencyMilliseconds;
+        if (!IsValidCounter(readLatency) ||
+            readLatency!.Value > 60_000 ||
+            readLatency.Value < _options.PagingWatchDiskLatencyMilliseconds)
         {
             return false;
         }
