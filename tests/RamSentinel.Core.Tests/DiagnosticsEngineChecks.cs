@@ -10,6 +10,7 @@ internal static class DiagnosticsEngineChecks
         ("A brief RAM spike is ignored", TestBriefMemorySpike),
         ("Low available RAM alone is not called critical", TestMemoryPressureNeedsCorroboration),
         ("Sustained CPU load identifies a leading process", TestSustainedCpuLoad),
+        ("Reused process IDs are not merged into one attribution", TestProcessIdReuse),
         ("A brief CPU spike is ignored", TestBriefCpuSpike),
         ("Invalid CPU samples are unavailable, not zero", TestInvalidCpuSample),
         ("Sustained disk latency requires concurrent activity", TestSustainedDiskLatency),
@@ -85,6 +86,33 @@ internal static class DiagnosticsEngineChecks
         Assert(finding.Confidence == ConfidenceLevel.High, "A repeatedly observed leading process should increase attribution confidence.");
         Assert(finding.Summary.Contains("WorkApp", StringComparison.Ordinal), "The leading process should be named in the explanation.");
         Assert(finding.RestorePlan.Contains("אינו סוגר", StringComparison.Ordinal), "The engine must not close the process.");
+    }
+
+    private static void TestProcessIdReuse()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (index, at) =>
+            CreateSample(
+                at,
+                cpuPercent: 92,
+                processes:
+                [
+                    new ProcessPerformanceSample(
+                        1234,
+                        "WorkApp",
+                        28,
+                        500 * 1024UL * 1024UL,
+                        400 * 1024UL * 1024UL,
+                        StartedAtUtc: (index < 2 ? start : start.AddMinutes(1)).UtcDateTime)
+                ]));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Cpu);
+
+        Assert(!finding.Summary.Contains("WorkApp", StringComparison.Ordinal),
+            "Samples from two process instances that reused the same PID must not be combined.");
+        Assert(finding.Confidence == ConfidenceLevel.Medium,
+            "The system CPU finding should remain, without strong process attribution.");
     }
 
     private static void TestBriefCpuSpike()
