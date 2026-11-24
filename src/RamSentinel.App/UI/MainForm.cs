@@ -62,7 +62,7 @@ internal sealed class MainForm : Form
 
         var trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("פתח חלון", null, (_, _) => ShowWindow());
-        trayMenu.Items.Add("רענן נתונים", null, (_, _) => RefreshAll());
+        trayMenu.Items.Add("רענן מדדים", null, (_, _) => RefreshAll());
         trayMenu.Items.Add("פתח את מנהל המשימות", null, (_, _) => OpenTaskManager());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("יציאה", null, (_, _) => ExitApplication());
@@ -84,6 +84,7 @@ internal sealed class MainForm : Form
             _updatingStartupCheckBox = true;
             _startWithWindowsCheckBox.Checked = StartupManager.IsEnabled();
             _updatingStartupCheckBox = false;
+            _timer.Interval = 10_000;
             RefreshAll();
         };
     }
@@ -108,7 +109,7 @@ internal sealed class MainForm : Form
 
         _explanationLabel.Dock = DockStyle.Top;
         _explanationLabel.Height = 24;
-        _explanationLabel.Text = "Windows מנהלת את המטמון בעצמה. RAM Sentinel מתערבת רק כשיש סימנים ללחץ אמיתי.";
+        _explanationLabel.Text = "האבחון קורא מדדים בלבד. לא מתבצעים שינויים אוטומטיים במחשב.";
         _explanationLabel.ForeColor = SystemColors.GrayText;
         _explanationLabel.TextAlign = ContentAlignment.MiddleRight;
 
@@ -532,7 +533,8 @@ internal sealed class MainForm : Form
             Name: row.Name,
             CpuPercent: row.CpuPercent,
             WorkingSetBytes: (ulong)Math.Max(0, row.WorkingSetBytes),
-            PrivateBytes: (ulong)Math.Max(0, row.PrivateBytes))).ToArray();
+            PrivateBytes: (ulong)Math.Max(0, row.PrivateBytes),
+            StartedAtUtc: row.StartTimeUtc)).ToArray();
     }
 
     private void CloseSelectedApplication()
