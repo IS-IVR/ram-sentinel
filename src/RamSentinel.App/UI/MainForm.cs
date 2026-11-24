@@ -10,6 +10,7 @@ internal sealed class MainForm : Form
     private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
+    private readonly WindowsMemoryPagingProvider _pagingMetricsProvider = new();
     private readonly DiagnosticsEngine _diagnosticsEngine = new();
     private readonly PerformanceSampleHistory _diagnosticHistory = new();
     private readonly DiagnosticsSummaryView _diagnosticsView = new();
@@ -375,12 +376,15 @@ internal sealed class MainForm : Form
                     _lastProcessRefresh = now;
                 }
 
+                PagingMetricsSnapshot paging = _pagingMetricsProvider.Read();
+
                 var sample = new SystemPerformanceSample(
                     CapturedAt: now,
                     Memory: snapshot,
                     CpuPercent: _latestCpuPercent,
                     Disk: disk,
-                    Processes: _lastProcessSamples);
+                    Processes: _lastProcessSamples,
+                    Paging: paging);
 
                 if (_diagnosticHistory.Add(sample))
                 {
@@ -708,6 +712,7 @@ internal sealed class MainForm : Form
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _diskMetricsProvider.Dispose();
+        _pagingMetricsProvider.Dispose();
         base.OnFormClosing(e);
     }
 
