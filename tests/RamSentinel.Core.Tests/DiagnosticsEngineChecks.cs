@@ -11,6 +11,7 @@ internal static class DiagnosticsEngineChecks
         ("Low available RAM alone is not called critical", TestMemoryPressureNeedsCorroboration),
         ("Sustained hard-fault reads plus disk load strengthen RAM diagnosis", TestSustainedPagingCorrelation),
         ("Page reads without disk load do not strengthen RAM diagnosis", TestPagingNeedsDiskCorrelation),
+        ("Write latency alone does not corroborate page reads", TestPagingNeedsReadLatency),
         ("Page reads without RAM pressure do not create a RAM finding", TestPagingWithoutMemoryPressure),
         ("Invalid paging counters do not increase confidence", TestInvalidPagingMetrics),
         ("Sustained CPU load identifies a leading process", TestSustainedCpuLoad),
@@ -119,6 +120,29 @@ internal static class DiagnosticsEngineChecks
 
         Assert(finding.Confidence == ConfidenceLevel.Medium,
             "Page reads without concurrent disk latency and activity must not increase confidence.");
+    }
+
+    private static void TestPagingNeedsReadLatency()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 4,
+                memoryLoad: 96,
+                commitPercent: 95,
+                readLatency: 3,
+                writeLatency: 80,
+                activePercent: 90,
+                queueLength: 2,
+                pageReadsPerSecond: 20,
+                pagesInputPerSecond: 120));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
+
+        Assert(finding.Confidence == ConfidenceLevel.Medium,
+            "High write latency without high read latency must not be attributed to hard-page-fault reads.");
     }
 
     private static void TestPagingWithoutMemoryPressure()
