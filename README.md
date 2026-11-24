@@ -9,6 +9,7 @@
 ## יכולות איסוף קיימות
 
 - RAM פיזי, Available, Commit, System Cache ו-Kernel Nonpaged.
+- מדדי Page Reads/sec ו-Page Inputs/sec לזיהוי קריאות דף קשות, כראיה מסייעת בלבד.
 - CPU כולל ולפי תהליך.
 - זמני קריאה/כתיבה לדיסק, תור ופעילות באמצעות PDH.
 - נפח פנוי בכונן המערכת.
