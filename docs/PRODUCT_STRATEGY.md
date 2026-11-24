@@ -27,6 +27,8 @@ Do not advertise a fixed percentage speed increase. Results depend on the actual
 
 ## Product experience
 
+The detailed UX specification is maintained in [docs/UX_DESIGN.md](UX_DESIGN.md). The framework decision and low-end hardware benchmark gate are documented in [docs/UI_FRAMEWORK_DECISION.md](UI_FRAMEWORK_DECISION.md). The diagnostic evidence model is documented in [docs/DIAGNOSTICS_ENGINE.md](DIAGNOSTICS_ENGINE.md).
+
 ### 1. Quick diagnosis (read-only)
 
 A short scan should collect:
@@ -35,7 +37,6 @@ A short scan should collect:
 - System CPU and per-process CPU over a sampling interval.
 - Per-process working set and private bytes.
 - Disk read/write latency, queue, active time, and Windows-volume free space.
-- Free space on the Windows volume.
 - Startup entries and their source, initially read-only.
 - Power mode and whether the device is on AC or battery, where supported.
 
@@ -160,9 +161,8 @@ Report the median, not the best run. If the result is within measurement noise o
 - Low-frequency disk metrics and system-volume free-space reading.
 - Adaptive low-overhead sampling.
 - Read-only startup inventory.
-- Disk latency/queue and system-volume space diagnostics.
-- Free-space check.
-- Clear bottleneck explanation.
+- Evidence-based detectors with confidence levels.
+- Clear bottleneck explanation, based on sustained correlated measurements.
 
 ### M2 - Startup and background management
 - User-scope disable with exact backup.
