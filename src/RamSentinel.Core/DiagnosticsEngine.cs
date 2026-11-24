@@ -137,6 +137,10 @@ public sealed class DiagnosticsEngine
             .Max();
         double pressureRatio = GetMatchRatio(samples, sample => IsWarningMemory(sample.Memory!));
         double severeRatio = GetMatchRatio(samples, sample => IsCriticalMemory(sample.Memory!));
+        bool hasCommitData = snapshots.Any(snapshot => snapshot.CommitLimitBytes > 0);
+        string commitNote = hasCommitData
+            ? $"וה-Commit הגיע עד {highestCommit:0.0}%"
+            : "ומדד Commit לא היה זמין";
 
         ProcessPerformanceSample? largestProcess = (samples[^1].Processes ?? [])
             .Where(process => process.PrivateBytes.HasValue && !string.IsNullOrWhiteSpace(process.Name))
@@ -148,7 +152,7 @@ public sealed class DiagnosticsEngine
             : $"התהליך עם הזיכרון הפרטי הגדול ביותר במדגם האחרון הוא {largestProcess.Name} ({FormatGiB(largestProcess.PrivateBytes!.Value)} GB). זה לא מוכיח שהתהליך מיותר.";
 
         string summary = severe
-            ? $"סימני לחץ משמעותיים הופיעו ב-{severeRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% וה-Commit הגיע עד {highestCommit:0.0}%. {processNote} לא נאספו עדיין נתוני Hard Faults, ולכן אין כאן קביעה שהמחשב מבצע Paging."
+            ? $"סימני לחץ משמעותיים הופיעו ב-{severeRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% {commitNote}. {processNote} לא נאספו עדיין נתוני Hard Faults, ולכן אין כאן קביעה שהמחשב מבצע Paging."
             : $"סימני עומס זיכרון הופיעו ב-{pressureRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}, אך הם אינם מספיקים לקביעה שמדובר בלחץ חמור. {processNote}";
 
         var evidence = new List<FindingEvidence>
@@ -307,9 +311,9 @@ public sealed class DiagnosticsEngine
         double loadRatio = GetMatchRatio(
             samples,
             severe ? IsCriticalDisk : IsWarningDisk);
-        double peakLatency = samples
-            .Select(sample => GetDiskLatency(sample.Disk!)!.Value)
-            .Max();
+        SystemPerformanceSample peakLatencySample = samples
+            .MaxBy(sample => GetDiskLatency(sample.Disk!)!.Value)!;
+        double peakLatency = GetDiskLatency(peakLatencySample.Disk!)!.Value;
         double averageActive = samples
             .Where(sample => IsValidPercentage(sample.Disk!.ActiveTimePercent))
             .Select(sample => sample.Disk!.ActiveTimePercent!.Value)
@@ -344,8 +348,8 @@ public sealed class DiagnosticsEngine
                 "שיא זמן תגובה",
                 peakLatency.ToString("0.0"),
                 "ms",
-                samples[^1].CapturedAt,
-                "השיא שנמדד בחלון; אינו מוצג לבדו כהוכחה לצוואר בקבוק."),
+                peakLatencySample.CapturedAt,
+                "הזמן שבו נמדד השיא; אינו מוצג לבדו כהוכחה לצוואר בקבוק."),
             new(
                 "פעילות דיסק ממוצעת",
                 averageActive.ToString("0.0"),
@@ -614,6 +618,11 @@ public sealed class DiagnosticsEngine
         if (findings.Count > 0)
         {
             return $"הבדיקה הסתיימה. נמצאו {findings.Count} ממצאים שכדאי לבדוק.";
+        }
+
+        if (unavailable.Count >= 4)
+        {
+            return "לא התקבלו מדדי ביצועים תקינים. בדוק שההרשאות ומוני Windows זמינים, ונסה שוב.";
         }
 
         if (isCollecting)
