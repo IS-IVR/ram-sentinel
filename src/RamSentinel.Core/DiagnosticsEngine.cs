@@ -136,6 +136,7 @@ public sealed class DiagnosticsEngine
             .DefaultIfEmpty(0)
             .Max();
         double pressureRatio = GetMatchRatio(samples, sample => IsWarningMemory(sample.Memory!));
+        double severeRatio = GetMatchRatio(samples, sample => IsCriticalMemory(sample.Memory!));
 
         ProcessPerformanceSample? largestProcess = (samples[^1].Processes ?? [])
             .Where(process => process.PrivateBytes.HasValue && !string.IsNullOrWhiteSpace(process.Name))
@@ -147,8 +148,8 @@ public sealed class DiagnosticsEngine
             : $"התהליך עם הזיכרון הפרטי הגדול ביותר במדגם האחרון הוא {largestProcess.Name} ({FormatGiB(largestProcess.PrivateBytes!.Value)} GB). זה לא מוכיח שהתהליך מיותר.";
 
         string summary = severe
-            ? $"נמדד לחץ זיכרון לאורך חלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% וה-Commit הגיע עד {highestCommit:0.0}%. {processNote} לא נאספו עדיין נתוני Hard Faults, ולכן אין כאן קביעה שהמחשב מבצע Paging."
-            : $"נמדדו סימני עומס זיכרון חוזרים לאורך {FormatDuration(GetDuration(samples))}, אך הם אינם מספיקים לקביעה שמדובר בלחץ חמור. {processNote}";
+            ? $"סימני לחץ משמעותיים הופיעו ב-{severeRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% וה-Commit הגיע עד {highestCommit:0.0}%. {processNote} לא נאספו עדיין נתוני Hard Faults, ולכן אין כאן קביעה שהמחשב מבצע Paging."
+            : $"סימני עומס זיכרון הופיעו ב-{pressureRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}, אך הם אינם מספיקים לקביעה שמדובר בלחץ חמור. {processNote}";
 
         var evidence = new List<FindingEvidence>
         {
@@ -226,6 +227,11 @@ public sealed class DiagnosticsEngine
 
         double averageCpu = samples.Average(sample => sample.CpuPercent!.Value);
         double peakCpu = samples.Max(sample => sample.CpuPercent!.Value);
+        double loadRatio = GetMatchRatio(
+            samples,
+            sample => sample.CpuPercent!.Value >= (severe
+                ? _options.CpuActionThresholdPercent
+                : _options.CpuWatchThresholdPercent));
         ProcessCpuAggregate? leadingProcess = GetLeadingCpuProcess(samples);
 
         bool strongAttribution = leadingProcess is not null &&
@@ -267,7 +273,7 @@ public sealed class DiagnosticsEngine
             Status: severe ? FindingStatus.ActionRecommended : FindingStatus.Watch,
             Confidence: strongAttribution ? ConfidenceLevel.High : ConfidenceLevel.Medium,
             Title: severe ? "המעבד עמוס לאורך זמן" : "נמדד עומס CPU מתמשך",
-            Summary: $"נמדד עומס CPU ממוצע של {averageCpu:0.0}% לאורך {FormatDuration(GetDuration(samples))}. {processNote}",
+            Summary: $"עומס ה-CPU הממוצע היה {averageCpu:0.0}%, וסף העומס נחצה ב-{loadRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. {processNote}",
             ObservedDuration: GetDuration(samples),
             Evidence: evidence,
             Impact: ImpactArea.CurrentWorkload,
@@ -298,6 +304,9 @@ public sealed class DiagnosticsEngine
         double averageLatency = samples
             .Select(sample => GetDiskLatency(sample.Disk!)!.Value)
             .Average();
+        double loadRatio = GetMatchRatio(
+            samples,
+            severe ? IsCriticalDisk : IsWarningDisk);
         double peakLatency = samples
             .Select(sample => GetDiskLatency(sample.Disk!)!.Value)
             .Max();
@@ -319,7 +328,7 @@ public sealed class DiagnosticsEngine
                 latency >= _options.DiskActionLatencyMilliseconds &&
                 sample.Disk!.ActiveTimePercent is double active &&
                 active >= _options.DiskActionActivePercent &&
-                sample.Disk.QueueLength is double queue &&
+                sample.Disk!.QueueLength is double queue &&
                 queue >= _options.DiskActionQueueLength,
             _options.MinimumDiskDuration);
 
@@ -356,7 +365,7 @@ public sealed class DiagnosticsEngine
             Status: severe ? FindingStatus.ActionRecommended : FindingStatus.Watch,
             Confidence: corroborated ? ConfidenceLevel.High : ConfidenceLevel.Medium,
             Title: severe ? "הדיסק מגיב באיטיות תחת עומס" : "נמדדו זמני תגובה גבוהים בדיסק",
-            Summary: $"זמן התגובה הממוצע שנמדד הוא {averageLatency:0.0}ms לאורך {FormatDuration(GetDuration(samples))}, בזמן שנמדדה גם פעילות דיסק. המדידה אינה מזהה לבדה את הסיבה או את תקינות הכונן.",
+            Summary: $"זמן התגובה הממוצע שנמדד הוא {averageLatency:0.0}ms, ותנאי העומס נחצו ב-{loadRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. המדידה אינה מזהה לבדה את הסיבה או את תקינות הכונן.",
             ObservedDuration: GetDuration(samples),
             Evidence: evidence,
             Impact: ImpactArea.AppLaunch,
@@ -517,7 +526,8 @@ public sealed class DiagnosticsEngine
     }
 
     private static bool HasValidStorageData(SystemPerformanceSample sample) =>
-        sample.Disk?.SystemDriveFreeBytes is ulong freeBytes &&
+        sample.Disk is not null &&
+        sample.Disk.SystemDriveFreeBytes is ulong freeBytes &&
         sample.Disk.SystemDriveTotalBytes is ulong totalBytes &&
         totalBytes > 0 &&
         freeBytes <= totalBytes;
