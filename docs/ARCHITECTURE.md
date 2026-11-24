@@ -12,6 +12,7 @@
 - Memory: Total / Available / Commit / Commit Limit / System Cache / Kernel pools.
 - CPU: GetSystemTimes ו-TotalProcessorTime לפי תהליך.
 - Disk: נפח פנוי, latency ו-queue באמצעות PDH בקצב נמוך.
+- Paging: Page Reads/sec ו-Page Inputs/sec באמצעות PDH, בדגימת אבחון בלבד.
 - Startup: Run keys, Startup folders ובהמשך Logon Scheduled Tasks.
 - Power: Power mode / AC state כאשר אפשר לקרוא זאת באופן אמין.
 
