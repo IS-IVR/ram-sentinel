@@ -620,14 +620,14 @@ public sealed class DiagnosticsEngine
             return $"הבדיקה הסתיימה. נמצאו {findings.Count} ממצאים שכדאי לבדוק.";
         }
 
-        if (unavailable.Count >= 4)
-        {
-            return "לא התקבלו מדדי ביצועים תקינים. בדוק שההרשאות ומוני Windows זמינים, ונסה שוב.";
-        }
-
         if (isCollecting)
         {
             return "אוספים נתונים כדי להבדיל בין עומס רגעי לבעיה מתמשכת. אין צורך לבצע פעולה כרגע.";
+        }
+
+        if (unavailable.Count >= 4)
+        {
+            return "לא התקבלו מדדי ביצועים תקינים. בדוק שההרשאות ומוני Windows זמינים, ונסה שוב.";
         }
 
         if (unavailable.Count > 0)
