@@ -1,92 +1,125 @@
-# ארכיטקטורה
+# ארכיטקטורה - RAM Sentinel
 
 ## מטרת המוצר
 
-RAM Sentinel נועדה לשמור על תגובתיות המחשב בזמן עבודה. היא אינה מנסה לרוקן RAM לשם הצגת מספר פנוי גבוה. Windows משתמשת בזיכרון פנוי גם למטמון, ודפי Standby ניתנים לשימוש מחדש לפי הצורך.
+לאתר ולצמצם גורמים מדידים שמאטים את תגובתיות Windows. המוצר אינו RAM Cleaner ואינו מנסה להגדיל מלאכותית את כמות הזיכרון הפנוי.
 
-המערכת מזהה לחץ זיכרון מתמשך ומאפשרת למשתמש לזהות ולסגור בצורה רגילה אפליקציות משתמש שאינן נחוצות כרגע.
+## שכבות ארכיטקטורה
 
-## רכיבים
+### 1. Collectors - איסוף נתונים
+
+אוספים מקומיים וקריאה בלבד:
+- Memory: Total / Available / Commit / Commit Limit / System Cache / Kernel pools.
+- CPU: GetSystemTimes, בהמשך GetProcessTimes או TotalProcessorTime לפי תהליך.
+- Disk: נפח פנוי, latency ו-queue באמצעות PDH בקצב נמוך.
+- Startup: Run keys, Startup folders ובהמשך Logon Scheduled Tasks.
+- Power: Power mode / AC state כאשר אפשר לקרוא זאת באופן אמין.
+
+ה-Collectors חייבים להיות קלים, עם timeouts וטיפול בכשל. אין סריקות דיסק רקורסיביות או WMI polling תכוף.
+
+### 2. Diagnosis Engine - מנוע אבחון
+
+מקבל חלונות מדידה ומזהה:
+- CPU saturation.
+- Memory pressure ו-Commit pressure.
+- Disk latency / queue.
+- Startup load.
+- Low system-drive free space.
+- מגמת גידול בזיכרון פרטי של תהליך.
+
+אין להסיק צוואר בקבוק ממדידה בודדת. נדרשים משך, סף והקשר למשימה.
+
+### 3. Recommendation Engine - המלצות
+
+כל המלצה כוללת:
+- ראיות/מדדים.
+- סיבת ההמלצה.
+- Confidence.
+- תועלת אפשרית והחיסרון.
+- הרשאות נדרשות.
+- פעולה הפיכה ודרך Restore.
+
+### 4. Action Engine - שינוי מבוקר
+
+לא לבצע שינוי בזמן האבחון. כל שינוי נוצר כ-ActionPlan, מוצג למשתמש וממתין לאישור. לפני שינוי שומרים Backup מקומי. יש Audit log עם תאריך, ערך ישן, ערך חדש ותוצאת פעולה.
+
+### 5. Verification Engine - מדידה אחרי שינוי
+
+חוזרים על אותה משימה באותם תנאים. מדווחים Median של מספר ריצות ולא תוצאה מיטבית יחידה. אם אין שיפור מעבר לרעש המדידה, אומרים שאין הוכחת שיפור.
+
+## ארכיטקטורה נוכחית בקוד
 
 ### RamSentinel.Core
-
-ספרייה ללא תלות ב-Windows:
-- `MemorySnapshot`: Total / Available / Used, Commit, Cache, Kernel Nonpaged, תהליכים ו-Threads.
-- `MemoryPressureEvaluator`: מעבר בין Normal / Warning / High עם השהיה למניעת התרעות שווא.
+- MemorySnapshot
+- MemoryPressureEvaluator
+- CpuUsageCalculator
 
 ### RamSentinel.App
-
-אפליקציית Windows Forms:
-- `WindowsMemoryProvider`: קריאה ל-`GlobalMemoryStatusEx` ול-`GetPerformanceInfo`.
-- `MainForm`: חלון בעברית, RTL, רשימת תהליכים, התראות ואזור התראות.
-- `WindowsCpuUsageProvider`: מדידת CPU מערכתית באמצעות הפרשי `GetSystemTimes`.
-- `StartupManager`: הפעלה אוטומטית אופציונלית למשתמש הנוכחי דרך מפתח Run ב-`HKCU` בלבד.
+- WindowsMemoryProvider
+- WindowsCpuUsageProvider
+- StartupManager
+- MainForm
 
 ### RamSentinel.Core.Tests
+בדיקות ללא Framework חיצוני ללוגיקת לחץ זיכרון ולחישוב CPU.
 
-תוכנית בדיקות קלה ללא Framework חיצוני:
-- זיכרון תקין.
-- מצב Warning.
-- לחץ קריטי מתמשך.
-- איפוס טיימר לאחר התאוששות.
-- לחץ Commit.
+## איסוף CPU לפי תהליך
 
-## מדדי זיכרון
+לכל PID נשמרים:
+- Process StartTime (כדי לזהות שימוש חוזר ב-PID).
+- TotalProcessorTime.
+- זמן דגימה.
 
-- `GlobalMemoryStatusEx`: זיכרון פיזי כולל, זמין ואחוז שימוש.
-- `GetPerformanceInfo`: Commit Total / Limit, System Cache, Kernel Nonpaged, מספר תהליכים ו-Threads.
-- `WorkingSet64`: דפים של תהליך שנמצאים כרגע בזיכרון הפיזי; המדד עשוי לכלול דפים משותפים.
-- `PrivateMemorySize64`: זיכרון פרטי שמיוחס לתהליך.
+החישוב:
+CPU% = DeltaProcessCpuTime / (DeltaWallTime * LogicalProcessorCount) * 100
 
-המרת Performance Information לבתים נעשית באמצעות הכפלת מספר הדפים בגודל PageSize שמוחזר על ידי Windows.
+דגימה ראשונה משמשת כ-baseline. תהליכים שיצאו מוסרים מה-cache. האחוז מנורמל לכל קיבולת CPU של המכונה, כך שתהליך המשתמש בליבה לוגית אחת במחשב עם ארבע ליבות לוגיות יציג בערך 25%.
 
-## מנגנון זיהוי לחץ
+## תדירות איסוף
 
-הספים הראשוניים הם:
-- Warning: Available <= 12%, Memory Load >= 88%, או Commit >= 90%.
-- Critical: Available <= 5%, Memory Load >= 95%, או Commit >= 95%.
-- High: תנאי Critical התקיים ברציפות במשך 30 שניות.
+- כשהחלון מוסתר: מדדי מערכת כל 30 שניות.
+- כשהחלון פתוח: מדדי מערכת כל 10 שניות.
+- רשימת תהליכים כל 30 שניות.
+- מדדי Disk דרך PDH, כשימומשו, ייאספו לכל היותר פעם בשנייה ובדרך כלל כל 5-10 שניות.
+- אין polling מהיר או timers תכופים כשהיישום במגש.
 
-התאוששות ממצב Warning/High מתרחשת כאשר כל מדדי האזהרה יורדים מתחת לספי Warning. הספים הם ערכי פתיחה, ויש לכייל אותם לפי מדידות במחשבים שונים.
+## Startup Manager - תכנון
 
-## בקשת סגירה רגילה
+הגרסה הראשונה תציג Inventory בלבד. בשלב השני תתאפשר השבתה של פריטי HKCU בלבד:
+1. שמירת ה-path, value name, type, raw command ונתוני המקור.
+2. כתיבת Backup לפני מחיקה/העברה.
+3. אישור משתמש.
+4. השבתה של פריט בודד בלבד.
+5. Restore מדויק, בדיקת התנגשות ויומן פעולה.
 
-1. המשתמש בוחר תהליך מהרשימה.
-2. RAM Sentinel חוסמת מראש שמות תהליכים מוגנים ותהליכי מערכת מרכזיים.
-3. המשתמש מאשר במפורש.
-4. התוכנה מאמתת מחדש PID, שם וזמן התחלה כדי לצמצם סיכון ל-PID reuse.
-5. נבדק שלתהליך יש חלון ראשי.
-6. נשלחת בקשת סגירה רגילה באמצעות `Process.CloseMainWindow()`.
-7. התוכנה אינה מפעילה Kill או TerminateProcess. אם האפליקציה מבקשת לשמור מסמך, המשתמש מטפל בכך בחלון של האפליקציה.
+פריטי HKLM, Services, Drivers ו-Scheduled Tasks לא יושבתו אוטומטית. Machine-wide changes דורשים תכנון הרשאות ושחזור נפרד.
 
-הפעולה לא מבטיחה שהתהליך ייסגר; אפליקציה יכולה להתעלם מבקשה או להציג דיאלוג.
+## אבחון דיסק
 
-## מדיניות בטיחות
+PDH מספק ממשק איסוף מוני ביצועים. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length / Disk Transfers/sec לפי זמינות המונים והשפה. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
 
-1. אין שימוש ב-`EmptyWorkingSet` או בכלי צד שלישי לריקון Standby List.
-2. אין שימוש ב-`SetProcessWorkingSetSize` על תהליכים אחרים.
-3. אין `Process.Kill`, סיום שירותים או טיפול אוטומטי בתהליכי מערכת.
-4. אין סגירת תוכנות אוטומטית בגרסה הנוכחית.
-5. אין פעולה שמשנה את המחשב ללא הסכמה מפורשת.
-6. אין צורך בהרשאות מנהל.
-7. הניטור מקומי בלבד.
+## פעולות Windows מובנות
 
-## מדידת CPU
+- Startup apps: הצגה וניהול מבוקר.
+- Storage Sense: פתיחת הגדרות והצגת המלצות, בלי מחיקת קבצים אוטומטית.
+- Optimize Drives: פתיחת כלי Windows, בלי להפעיל defrag ידני עיוור על כל כונן.
+- Visual Effects: הצעת פתיחת Performance Options.
+- Power mode: הצעת שינוי רק אחרי הסבר על חום, חשמל וסוללה. אין להפעיל Best Performance כברירת מחדל.
 
-`GetSystemTimes` מחזירה זמני Idle, Kernel ו-User מצטברים מאז אתחול המערכת. RAM Sentinel שומרת דגימה קודמת ומחשבת שימוש CPU לפי ההפרשים בין הדגימות. הדגימה הראשונה משמשת כבסיס ואינה מציגה אחוז. המדד הוא שימוש CPU של כל המערכת, ואינו עדיין מדד CPU לכל תהליך.
+## קווי בטיחות
 
-## מחזור ניטור וביצועים
+- לא מרוקנים Standby List/File Cache.
+- לא משתמשים ב-EmptyWorkingSet/SetProcessWorkingSetSize לתהליכים אחרים.
+- לא Process.Kill ולא TerminateProcess.
+- לא משנים Page File, Defender, Firewall, Windows Update, SysMain או שירותי מערכת.
+- לא מוחקים קבצים אישיים.
+- כל Action חייב להיות opt-in, reversible ומתועד.
 
-- דגימת מדדי מערכת כל 10 שניות.
-- איסוף 20 התהליכים המובילים כל 30 שניות.
-- ללא Busy-Wait, סריקות דיסק או polling מהיר.
-- התראות רק במעבר למצב High, ולא בכל דגימה.
-- חובה לבדוק את צריכת RAM ו-CPU של RAM Sentinel עצמה לאורך זמן.
+## מדדי הצלחה
 
-## אבחון צווארי בקבוק
-
-פינוי RAM לא יאיץ פעולה שהמגבלה שלה היא CPU, GPU, דיסק, חום או רשת. בהמשך יש להוסיף מדדים לאותם משאבים לפני שמפעילים אופטימיזציות נוספות.
-
-## פריסה
-
-Publish כקובץ win-x64 עצמאי. אין מתקין ב-MVP.
+- Median sign-in-to-idle.
+- Median app launch time, לפחות שלוש ריצות.
+- Idle CPU לאחר settling period.
+- Disk latency במהלך workload.
+- RAM Available ו-Commit בזמן multitasking.
+- צריכת RAM/CPU של RAM Sentinel עצמה.

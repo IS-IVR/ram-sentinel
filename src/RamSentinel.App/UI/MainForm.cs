@@ -9,7 +9,9 @@ internal sealed class MainForm : Form
     private readonly WindowsMemoryProvider _memoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
     private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 10_000 };
+    private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
+    private readonly int _logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
+    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 30_000 };
     private readonly NotifyIcon _notifyIcon;
     private readonly Label _statusLabel = new();
     private readonly Label _totalLabel = new();
@@ -129,10 +131,11 @@ internal sealed class MainForm : Form
         _processList.GridLines = true;
         _processList.HideSelection = false;
         _processList.MultiSelect = false;
-        _processList.Columns.Add("תהליך", 250);
-        _processList.Columns.Add("PID", 75);
-        _processList.Columns.Add("RAM פיזי", 135);
-        _processList.Columns.Add("זיכרון פרטי", 135);
+        _processList.Columns.Add("תהליך", 220);
+        _processList.Columns.Add("PID", 65);
+        _processList.Columns.Add("CPU", 75);
+        _processList.Columns.Add("RAM פיזי", 125);
+        _processList.Columns.Add("זיכרון פרטי", 125);
 
         var processMenu = new ContextMenuStrip();
         processMenu.Items.Add("בקש סגירה רגילה של התוכנה...", null, (_, _) => CloseSelectedApplication());
@@ -266,28 +269,55 @@ internal sealed class MainForm : Form
 
     private void RefreshProcessList()
     {
+        DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
         var rows = new List<ProcessRow>();
+        var activeProcessIds = new HashSet<int>();
+
         foreach (Process process in Process.GetProcesses())
         {
             using (process)
             {
                 try
                 {
+                    int processId = process.Id;
+                    activeProcessIds.Add(processId);
+                    string processName = process.ProcessName;
+                    long workingSet = process.WorkingSet64;
+                    long privateBytes = process.PrivateMemorySize64;
+
                     DateTime? startedAtUtc = null;
+                    double? cpuPercent = null;
                     try
                     {
                         startedAtUtc = process.StartTime.ToUniversalTime();
+                        TimeSpan totalCpuTime = process.TotalProcessorTime;
+
+                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample previous) &&
+                            previous.StartTimeUtc == startedAtUtc.Value)
+                        {
+                            cpuPercent = CpuUsageCalculator.Calculate(
+                                previous.TotalCpuTime,
+                                totalCpuTime,
+                                sampledAt - previous.SampledAt,
+                                _logicalProcessorCount);
+                        }
+
+                        _processCpuSamples[processId] = new ProcessCpuSample(
+                            startedAtUtc.Value,
+                            totalCpuTime,
+                            sampledAt);
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
                     {
-                        // Some protected processes do not expose their start time.
+                        // Some protected processes do not expose timing information.
                     }
 
                     rows.Add(new ProcessRow(
-                        process.Id,
-                        process.ProcessName,
-                        process.WorkingSet64,
-                        process.PrivateMemorySize64,
+                        processId,
+                        processName,
+                        workingSet,
+                        privateBytes,
+                        cpuPercent,
                         startedAtUtc));
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
@@ -297,14 +327,34 @@ internal sealed class MainForm : Form
             }
         }
 
+        // Remove samples for exited processes so the dictionary remains bounded.
+        foreach (int processId in _processCpuSamples.Keys.Where(id => !activeProcessIds.Contains(id)).ToArray())
+        {
+            _processCpuSamples.Remove(processId);
+        }
+
+        // Show both memory-heavy and CPU-heavy processes. A small but busy process
+        // must not disappear simply because its RAM use is modest.
+        List<ProcessRow> visibleRows = rows
+            .OrderByDescending(x => x.WorkingSetBytes)
+            .Take(15)
+            .Concat(rows.OrderByDescending(x => x.CpuPercent ?? 0d).Take(10))
+            .GroupBy(x => x.ProcessId)
+            .Select(group => group.First())
+            .OrderByDescending(x => x.CpuPercent ?? 0d)
+            .ThenByDescending(x => x.WorkingSetBytes)
+            .Take(20)
+            .ToList();
+
         _processList.BeginUpdate();
         try
         {
             _processList.Items.Clear();
-            foreach (ProcessRow row in rows.OrderByDescending(x => x.WorkingSetBytes).Take(20))
+            foreach (ProcessRow row in visibleRows)
             {
                 var item = new ListViewItem(row.Name) { Tag = row };
                 item.SubItems.Add(row.ProcessId.ToString());
+                item.SubItems.Add(row.CpuPercent.HasValue ? $"{row.CpuPercent.Value:0.0}%" : "מודד...");
                 item.SubItems.Add(FormatBytes((ulong)Math.Max(0, row.WorkingSetBytes)));
                 item.SubItems.Add(FormatBytes((ulong)Math.Max(0, row.PrivateBytes)));
                 _processList.Items.Add(item);
@@ -456,6 +506,7 @@ internal sealed class MainForm : Form
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
+        _timer.Interval = 10_000;
         RefreshAll();
     }
 
@@ -463,6 +514,8 @@ internal sealed class MainForm : Form
     {
         Hide();
         ShowInTaskbar = false;
+        // Keep background monitoring deliberately quiet on slower PCs.
+        _timer.Interval = 30_000;
     }
 
     private void ExitApplication()
@@ -501,10 +554,16 @@ internal sealed class MainForm : Form
         return $"{value:0.0} {units[unit]}";
     }
 
+    private sealed record ProcessCpuSample(
+        DateTime StartTimeUtc,
+        TimeSpan TotalCpuTime,
+        DateTimeOffset SampledAt);
+
     private sealed record ProcessRow(
         int ProcessId,
         string Name,
         long WorkingSetBytes,
         long PrivateBytes,
+        double? CpuPercent,
         DateTime? StartTimeUtc);
 }

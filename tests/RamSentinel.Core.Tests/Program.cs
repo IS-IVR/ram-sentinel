@@ -6,7 +6,9 @@ var checks = new List<(string Name, Action Run)>
     ("High but non-critical memory is reported as Warning", TestWarningMemory),
     ("Critical pressure must persist before High is reported", TestSustainedCriticalPressure),
     ("A recovery resets the sustained-pressure timer", TestRecoveryResetsTimer),
-    ("High commit pressure is detected", TestCommitPressure)
+    ("High commit pressure is detected", TestCommitPressure),
+    ("One busy core is normalized across logical processors", TestCpuNormalization),
+    ("Invalid process CPU deltas are rejected", TestInvalidCpuDelta)
 };
 
 int failures = 0;
@@ -74,6 +76,34 @@ static void TestCommitPressure()
 
     Assert(evaluator.Evaluate(criticalCommit, start) == MemoryPressureLevel.Warning, "Commit pressure should start as Warning.");
     Assert(evaluator.Evaluate(criticalCommit, start.AddSeconds(30)) == MemoryPressureLevel.High, "Sustained critical commit should become High.");
+}
+
+static void TestCpuNormalization()
+{
+    double? percent = CpuUsageCalculator.Calculate(
+        previousCpuTime: TimeSpan.Zero,
+        currentCpuTime: TimeSpan.FromSeconds(2),
+        elapsedWallTime: TimeSpan.FromSeconds(2),
+        logicalProcessorCount: 4);
+
+    Assert(percent.HasValue && Math.Abs(percent.Value - 25d) < 0.001, $"Expected 25%, got {percent}");
+}
+
+static void TestInvalidCpuDelta()
+{
+    double? negative = CpuUsageCalculator.Calculate(
+        previousCpuTime: TimeSpan.FromSeconds(3),
+        currentCpuTime: TimeSpan.FromSeconds(2),
+        elapsedWallTime: TimeSpan.FromSeconds(1),
+        logicalProcessorCount: 4);
+    Assert(negative is null, "A negative CPU delta should be rejected.");
+
+    double? zeroElapsed = CpuUsageCalculator.Calculate(
+        previousCpuTime: TimeSpan.Zero,
+        currentCpuTime: TimeSpan.FromSeconds(1),
+        elapsedWallTime: TimeSpan.Zero,
+        logicalProcessorCount: 4);
+    Assert(zeroElapsed is null, "A zero elapsed time should be rejected.");
 }
 
 static MemorySnapshot CreateSnapshot(double availablePercent, uint memoryLoad, double commitPercent)
