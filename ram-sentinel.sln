@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RamSentinel.Core", "src\Ram
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RamSentinel.App", "src\RamSentinel.App\RamSentinel.App.csproj", "{C2D971D0-654E-4F86-9C48-11F4B0AD2B4F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RamSentinel.Core.Tests", "tests\RamSentinel.Core.Tests\RamSentinel.Core.Tests.csproj", "{7D4E808F-4FA9-48B5-B018-67A5D6E38F12}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
@@ -20,5 +22,9 @@ Global
         {C2D971D0-654E-4F86-9C48-11F4B0AD2B4F}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {C2D971D0-654E-4F86-9C48-11F4B0AD2B4F}.Release|Any CPU.ActiveCfg = Release|Any CPU
         {C2D971D0-654E-4F86-9C48-11F4B0AD2B4F}.Release|Any CPU.Build.0 = Release|Any CPU
+        {7D4E808F-4FA9-48B5-B018-67A5D6E38F12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {7D4E808F-4FA9-48B5-B018-67A5D6E38F12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {7D4E808F-4FA9-48B5-B018-67A5D6E38F12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {7D4E808F-4FA9-48B5-B018-67A5D6E38F12}.Release|Any CPU.Build.0 = Release|Any CPU
     EndGlobalSection
 EndGlobal
