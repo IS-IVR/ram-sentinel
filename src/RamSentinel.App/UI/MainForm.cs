@@ -650,8 +650,6 @@ internal sealed class MainForm : Form
     {
         _allowExit = true;
         _timer.Stop();
-        _notifyIcon.Visible = false;
-        _notifyIcon.Dispose();
         Close();
     }
 

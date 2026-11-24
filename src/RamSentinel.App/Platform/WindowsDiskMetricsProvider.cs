@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 using RamSentinel.Core;
 
@@ -43,7 +42,10 @@ internal sealed class WindowsDiskMetricsProvider : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _ = PdhCollectQueryData(_query);
+        if (_query != IntPtr.Zero)
+        {
+            _ = PdhCollectQueryData(_query);
+        }
 
         (ulong? freeBytes, ulong? totalBytes) = ReadSystemDriveSpace();
 
