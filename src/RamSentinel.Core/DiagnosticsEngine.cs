@@ -142,6 +142,31 @@ public sealed class DiagnosticsEngine
             ? $"וה-Commit הגיע עד {highestCommit:0.0}%"
             : "ומדד Commit לא היה זמין";
 
+        bool hasPagingData = samples.Any(sample =>
+            IsValidCounter(sample.Paging?.PageReadsPerSecond));
+        bool pagingCorroborated = HasSustained(
+            samples,
+            IsPagingCorrelatedSample,
+            _options.MinimumDiskDuration);
+        SystemPerformanceSample? latestPagingSample = samples
+            .LastOrDefault(sample => IsValidCounter(sample.Paging?.PageReadsPerSecond));
+        double averagePageReads = samples
+            .Where(sample => IsValidCounter(sample.Paging?.PageReadsPerSecond))
+            .Select(sample => sample.Paging!.PageReadsPerSecond!.Value)
+            .DefaultIfEmpty(0)
+            .Average();
+        double averagePagesInput = samples
+            .Where(sample => IsValidCounter(sample.Paging?.PagesInputPerSecond))
+            .Select(sample => sample.Paging!.PagesInputPerSecond!.Value)
+            .DefaultIfEmpty(0)
+            .Average();
+
+        string pagingNote = pagingCorroborated
+            ? $"במקביל נמדדו בממוצע {averagePageReads:0.0} קריאות דף מהדיסק בשנייה, יחד עם זמן תגובה ופעילות דיסק גבוהים לאורך זמן. זה מחזק את החשד שלחץ הזיכרון משפיע על העבודה. חשוב: המדד כולל גם קריאות של חלקים מקובצי תוכנה וקבצים ממופים, ואינו מוכיח שהקריאות הגיעו מקובץ ההחלפה."
+            : hasPagingData
+                ? "נאספו מדדי Page Reads, אך לא נמצאה קורלציה מתמשכת מספקת עם לחץ RAM ופעילות דיסק כדי לייחס את ההאטה לזיכרון."
+                : "אין כאן קביעה שמתרחש Paging: מדד Page Reads/sec לא היה זמין במדידות.";
+
         ProcessPerformanceSample? largestProcess = (samples[^1].Processes ?? [])
             .Where(process => process.PrivateBytes.HasValue && !string.IsNullOrWhiteSpace(process.Name))
             .OrderByDescending(process => process.PrivateBytes)
@@ -152,7 +177,7 @@ public sealed class DiagnosticsEngine
             : $"התהליך עם הזיכרון הפרטי הגדול ביותר במדגם האחרון הוא {largestProcess.Name} ({FormatGiB(largestProcess.PrivateBytes!.Value)} GB). זה לא מוכיח שהתהליך מיותר.";
 
         string summary = severe
-            ? $"סימני לחץ משמעותיים הופיעו ב-{severeRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% {commitNote}. {processNote} לא נאספו עדיין נתוני Hard Faults, ולכן אין כאן קביעה שהמחשב מבצע Paging."
+            ? $"סימני לחץ משמעותיים הופיעו ב-{severeRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}. הזיכרון הזמין ירד עד {lowestAvailable:0.0}% {commitNote}. {processNote} {pagingNote}"
             : $"סימני עומס זיכרון הופיעו ב-{pressureRatio * 100d:0}% מהדגימות בחלון של {FormatDuration(GetDuration(samples))}, אך הם אינם מספיקים לקביעה שמדובר בלחץ חמור. {processNote}";
 
         var evidence = new List<FindingEvidence>
@@ -191,10 +216,32 @@ public sealed class DiagnosticsEngine
                 "מדד תצפיתי בלבד; אין להסיק ממנו שהתהליך בטוח לסגירה."));
         }
 
+        if (latestPagingSample is not null)
+        {
+            evidence.Add(new FindingEvidence(
+                "Page Reads/sec - ממוצע",
+                averagePageReads.ToString("0.0"),
+                "קריאות/שנייה",
+                latestPagingSample.CapturedAt,
+                "קריאות דף שחייבו הבאה מהדיסק; הנתון עשוי לכלול קובצי תוכנה וקבצים ממופים ואינו מזהה לבדו קריאות מקובץ ההחלפה."));
+
+            if (samples.Any(sample => IsValidCounter(sample.Paging?.PagesInputPerSecond)))
+            {
+                evidence.Add(new FindingEvidence(
+                    "Page Inputs/sec - ממוצע",
+                    averagePagesInput.ToString("0.0"),
+                    "דפים/שנייה",
+                    latestPagingSample.CapturedAt,
+                    "מספר הדפים שנקראו מהדיסק לפתרון תקלות דף קשות."));
+            }
+        }
+
         return new PerformanceFinding(
             Category: DiagnosticCategory.Memory,
             Status: severe ? FindingStatus.ActionRecommended : FindingStatus.Watch,
-            Confidence: severe ? ConfidenceLevel.Medium : ConfidenceLevel.Low,
+            Confidence: pagingCorroborated
+                ? ConfidenceLevel.High
+                : severe ? ConfidenceLevel.Medium : ConfidenceLevel.Low,
             Title: severe ? "נמדד לחץ זיכרון מתמשך" : "נמדדו סימני עומס זיכרון",
             Summary: summary,
             ObservedDuration: GetDuration(samples),
@@ -205,6 +252,31 @@ public sealed class DiagnosticsEngine
             Reversible: false,
             RestorePlan: "RAM Sentinel אינה סוגרת תוכנות במסגרת האבחון. אם סגרת תוכנה בעצמך, פתח אותה מחדש לפי הצורך; עבודה שלא נשמרה עלולה ללכת לאיבוד.",
             PriorityOrder: 10);
+    }
+
+    private bool IsPagingCorrelatedSample(SystemPerformanceSample sample)
+    {
+        if (sample.Memory is null ||
+            !IsCriticalMemory(sample.Memory) ||
+            !IsValidCounter(sample.Paging?.PageReadsPerSecond) ||
+            sample.Paging!.PageReadsPerSecond!.Value < _options.PagingWatchPageReadsPerSecond ||
+            sample.Disk is null)
+        {
+            return false;
+        }
+
+        double? latency = GetDiskLatency(sample.Disk);
+        if (!latency.HasValue || latency.Value < _options.PagingWatchDiskLatencyMilliseconds)
+        {
+            return false;
+        }
+
+        bool active = IsValidPercentage(sample.Disk.ActiveTimePercent) &&
+                      sample.Disk.ActiveTimePercent!.Value >= _options.PagingWatchDiskActivePercent;
+        bool queued = IsValidCounter(sample.Disk.QueueLength) &&
+                      sample.Disk.QueueLength!.Value >= _options.PagingWatchDiskQueueLength;
+
+        return active || queued;
     }
 
     private PerformanceFinding? EvaluateCpu(IReadOnlyList<SystemPerformanceSample> samples)
