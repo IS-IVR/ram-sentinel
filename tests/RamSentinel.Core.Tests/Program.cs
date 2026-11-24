@@ -13,6 +13,7 @@ var checks = new List<(string Name, Action Run)>
 };
 
 checks.AddRange(DiagnosticsEngineChecks.All);
+checks.AddRange(LifecycleEngineChecks.All);
 
 int failures = 0;
 foreach ((string name, Action run) in checks)

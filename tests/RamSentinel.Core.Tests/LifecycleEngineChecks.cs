@@ -1,0 +1,121 @@
+using RamSentinel.Core;
+
+internal static class LifecycleEngineChecks
+{
+    public static IReadOnlyList<(string Name, Action Run)> All =>
+    [
+        ("A parent-child relationship needs repeated direct observations", TestRepeatedObservation),
+        ("A reused parent PID starts a new relationship", TestParentPidReuse),
+        ("A missing parent is not inferred from a stale PID", TestMissingParent),
+        ("Duplicate process IDs make relationships ambiguous", TestAmbiguousParent),
+        ("Out-of-order inventories do not change relationship state", TestOutOfOrderSnapshot),
+        ("A long observation gap resets relationship confidence", TestObservationGap)
+    ];
+
+    private static void TestRepeatedObservation()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker();
+        ProcessLifecycleObservation[] first = Snapshot(start, Parent(start), Child(start));
+
+        Assert(tracker.Observe(start, first).Count == 0,
+            "A single inventory must not establish a stable relationship.");
+
+        DateTimeOffset secondAt = start.AddSeconds(30);
+        ProcessRelationship[] relationships = tracker
+            .Observe(secondAt, Snapshot(secondAt, Parent(start), Child(start)))
+            .ToArray();
+
+        Assert(relationships.Length == 1, "The repeated relationship should be reported.");
+        Assert(relationships[0].ConsecutiveObservations == 2, "The relationship should record two observations.");
+        Assert(relationships[0].Confidence == ConfidenceLevel.Medium, "Two observations should produce Medium confidence.");
+    }
+
+    private static void TestParentPidReuse()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker();
+        _ = tracker.Observe(start, Snapshot(start, Parent(start), Child(start)));
+
+        DateTimeOffset reusedAt = start.AddSeconds(30);
+        ProcessLifecycleObservation replacementParent = Parent(reusedAt);
+        ProcessRelationship[] relationships = tracker
+            .Observe(reusedAt, Snapshot(reusedAt, replacementParent, Child(start)))
+            .ToArray();
+
+        Assert(relationships.Length == 0,
+            "A new process instance reusing the parent PID must not inherit the previous relationship.");
+    }
+
+    private static void TestMissingParent()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker();
+        ProcessLifecycleObservation child = Child(at);
+
+        Assert(tracker.Observe(at, [child]).Count == 0,
+            "A child whose parent is absent from the current inventory must remain unlinked.");
+    }
+
+    private static void TestAmbiguousParent()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker();
+        ProcessLifecycleObservation parent = Parent(at);
+        ProcessLifecycleObservation duplicate = parent with
+        {
+            Identity = new ProcessIdentity(parent.Identity.ProcessId, at.AddSeconds(-1))
+        };
+
+        Assert(tracker.Observe(at, Snapshot(at, parent, duplicate, Child(at))).Count == 0,
+            "Duplicate PID identities in one inventory must make the relationship ambiguous.");
+    }
+
+    private static void TestOutOfOrderSnapshot()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker();
+        _ = tracker.Observe(at, Snapshot(at, Parent(at), Child(at)));
+
+        DateTimeOffset earlier = at.AddSeconds(-5);
+        Assert(tracker.Observe(earlier, Snapshot(earlier, Parent(at), Child(at))).Count == 0,
+            "An older snapshot must not advance relationship evidence.");
+
+        DateTimeOffset later = at.AddSeconds(30);
+        ProcessRelationship[] relationships = tracker
+            .Observe(later, Snapshot(later, Parent(at), Child(at)))
+            .ToArray();
+        Assert(relationships.Length == 1 && relationships[0].ConsecutiveObservations == 2,
+            "Only the valid later snapshot should advance the count.");
+    }
+
+    private static void TestObservationGap()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var tracker = new ProcessRelationshipTracker(TimeSpan.FromMinutes(1));
+        _ = tracker.Observe(at, Snapshot(at, Parent(at), Child(at)));
+
+        DateTimeOffset afterGap = at.AddMinutes(2);
+        Assert(tracker.Observe(afterGap, Snapshot(afterGap, Parent(at), Child(at))).Count == 0,
+            "A long gap must reset the relationship instead of implying continuous observation.");
+    }
+
+    private static ProcessLifecycleObservation Parent(DateTimeOffset startedAt) =>
+        new(new ProcessIdentity(100, startedAt), "ParentApp", null, startedAt);
+
+    private static ProcessLifecycleObservation Child(DateTimeOffset startedAt) =>
+        new(new ProcessIdentity(200, startedAt), "HelperApp", 100, startedAt);
+
+    private static ProcessLifecycleObservation[] Snapshot(
+        DateTimeOffset capturedAt,
+        params ProcessLifecycleObservation[] items) =>
+        items.Select(item => item with { CapturedAt = capturedAt }).ToArray();
+
+    private static void Assert(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+}
