@@ -337,22 +337,75 @@ internal sealed class MainForm : Form
     {
         try
         {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             MemorySnapshot snapshot = _memoryProvider.Read();
-            double? cpuPercent = null;
-            try
+            DiskMetricsSnapshot disk = _diskMetricsProvider.Read();
+
+            bool diagnosticSampleDue =
+                _lastDiagnosticSampleAt == DateTimeOffset.MinValue ||
+                now - _lastDiagnosticSampleAt >= DiagnosticSampleInterval;
+
+            if (diagnosticSampleDue)
             {
-                cpuPercent = _cpuUsageProvider.ReadPercent();
-                _cpuLabel.Text = cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד...";
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                _cpuLabel.Text = "לא זמין";
+                try
+                {
+                    _latestCpuPercent = _cpuUsageProvider.ReadPercent();
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    _latestCpuPercent = null;
+                }
+
+                if (_lastProcessRefresh == DateTimeOffset.MinValue ||
+                    now - _lastProcessRefresh >= DiagnosticSampleInterval)
+                {
+                    try
+                    {
+                        _lastProcessSamples = RefreshProcessList();
+                    }
+                    catch (Exception ex) when (
+                        ex is InvalidOperationException or
+                        System.ComponentModel.Win32Exception or
+                        NotSupportedException)
+                    {
+                        _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
+                    }
+
+                    _lastProcessRefresh = now;
+                }
+
+                var sample = new SystemPerformanceSample(
+                    CapturedAt: now,
+                    Memory: snapshot,
+                    CpuPercent: _latestCpuPercent,
+                    Disk: disk,
+                    Processes: _lastProcessSamples);
+
+                if (_diagnosticHistory.Add(sample))
+                {
+                    _lastDiagnosticSampleAt = now;
+                    DiagnosticReport report = _diagnosticsEngine.Evaluate(
+                        _diagnosticHistory.GetSnapshot(),
+                        now);
+
+                    _diagnosticsView.Render(report);
+
+                    _statusLabel.Text = report.IsCollecting
+                        ? "ניטור פעיל · אוספים מדידות לאורך זמן"
+                        : report.PrimaryFinding is null
+                            ? "ניטור פעיל · לא זוהה צוואר בקבוק מתמשך"
+                            : $"ניטור פעיל · {report.Findings.Count} ממצאים לבדיקה";
+                }
             }
 
-            DiskMetricsSnapshot disk = _diskMetricsProvider.Read();
+            _cpuLabel.Text = _latestCpuPercent.HasValue
+                ? $"{_latestCpuPercent.Value:0}%"
+                : "לא זמין";
+
             _diskLabel.Text = disk.ReadLatencyMilliseconds.HasValue || disk.WriteLatencyMilliseconds.HasValue
                 ? $"R {FormatMilliseconds(disk.ReadLatencyMilliseconds)} / W {FormatMilliseconds(disk.WriteLatencyMilliseconds)}"
                 : "לא זמין";
+
             _systemDriveSpaceLabel.Text = disk.SystemDriveFreeBytes.HasValue && disk.SystemDriveTotalBytes.HasValue
                 ? $"{FormatBytes(disk.SystemDriveFreeBytes.Value)} פנוי"
                 : "לא זמין";
@@ -365,43 +418,16 @@ internal sealed class MainForm : Form
                 ? $"{FormatBytes(snapshot.CommitUsedBytes)} / {FormatBytes(snapshot.CommitLimitBytes)}"
                 : "לא זמין";
 
-            MemoryPressureLevel level = _pressureEvaluator.Evaluate(snapshot, snapshot.CapturedAt);
-            _statusLabel.Text = level switch
-            {
-                MemoryPressureLevel.Normal =>
-                    $"תקין · RAM {snapshot.MemoryLoadPercent}% · CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד")} · {snapshot.ProcessCount} תהליכים",
-                MemoryPressureLevel.Warning =>
-                    $"עומס זיכרון גבוה · {snapshot.MemoryLoadPercent}% · בודק אם מדובר במצב מתמשך",
-                MemoryPressureLevel.High =>
-                    $"זוהה לחץ זיכרון מתמשך · {snapshot.MemoryLoadPercent}% · בדוק את התהליכים הכבדים",
-                _ => "מצב זיכרון לא ידוע"
-            };
-
-            if (level == MemoryPressureLevel.High && _lastPressureLevel != MemoryPressureLevel.High)
-            {
-                _notifyIcon.ShowBalloonTip(
-                    5000,
-                    "RAM Sentinel זיהתה לחץ זיכרון",
-                    "בדוק אילו תוכנות משתמשות בזיכרון רב. אפשר לבקש סגירה רגילה של תוכנת משתמש, בלי לסיים תהליכי מערכת.",
-                    ToolTipIcon.Warning);
-            }
-
-            _lastPressureLevel = level;
-            _notifyIcon.Text = $"RAM {snapshot.MemoryLoadPercent}% | CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "...")}";
-
-            if (DateTimeOffset.Now - _lastProcessRefresh >= TimeSpan.FromSeconds(30))
-            {
-                RefreshProcessList();
-                _lastProcessRefresh = DateTimeOffset.Now;
-            }
+            _notifyIcon.Text =
+                $"RAM {snapshot.MemoryLoadPercent}% | CPU {(_latestCpuPercent.HasValue ? $"{_latestCpuPercent.Value:0}%" : "...")}";
         }
         catch (Exception ex)
         {
-            _statusLabel.Text = $"לא ניתן לקרוא נתוני זיכרון: {ex.Message}";
+            _statusLabel.Text = $"לא ניתן לקרוא נתוני ביצועים: {ex.Message}";
         }
     }
 
-    private void RefreshProcessList()
+    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList()
     {
         DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
         var rows = new List<ProcessRow>();
@@ -500,6 +526,13 @@ internal sealed class MainForm : Form
         }
 
         _closeSelectedButton.Enabled = _processList.SelectedItems.Count == 1;
+
+        return rows.Select(row => new ProcessPerformanceSample(
+            ProcessId: row.ProcessId,
+            Name: row.Name,
+            CpuPercent: row.CpuPercent,
+            WorkingSetBytes: (ulong)Math.Max(0, row.WorkingSetBytes),
+            PrivateBytes: (ulong)Math.Max(0, row.PrivateBytes))).ToArray();
     }
 
     private void CloseSelectedApplication()
