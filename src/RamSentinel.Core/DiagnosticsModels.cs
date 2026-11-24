@@ -47,7 +47,8 @@ public sealed record ProcessPerformanceSample(
     string Name,
     double? CpuPercent,
     ulong? WorkingSetBytes,
-    ulong? PrivateBytes);
+    ulong? PrivateBytes,
+    DateTime? StartedAtUtc = null);
 
 /// <summary>
 /// One immutable point in the local performance history.
