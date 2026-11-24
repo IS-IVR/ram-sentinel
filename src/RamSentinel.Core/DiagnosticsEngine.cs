@@ -577,7 +577,7 @@ public sealed class DiagnosticsEngine
             {
                 ProcessPerformanceSample[] processSamples = group.ToArray();
                 return new ProcessCpuAggregate(
-                    ProcessId: group.Key,
+                    ProcessId: group.Key.ProcessId,
                     Name: processSamples[^1].Name,
                     AverageCpuPercent: processSamples.Average(process => process.CpuPercent!.Value),
                     SampleCount: processSamples.Length);
