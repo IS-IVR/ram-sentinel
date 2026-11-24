@@ -1,4 +1,4 @@
-name: Build
+name: Build and Test
 
 on:
   push:
@@ -26,6 +26,9 @@ jobs:
 
       - name: Build
         run: dotnet build .\ram-sentinel.sln --configuration Release --no-restore
+
+      - name: Run memory pressure logic checks
+        run: dotnet run --project .\tests\RamSentinel.Core.Tests\RamSentinel.Core.Tests.csproj --configuration Release --no-build
 
       - name: Publish standalone x64 app
         run: dotnet publish .\src\RamSentinel.App\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\artifacts\win-x64
