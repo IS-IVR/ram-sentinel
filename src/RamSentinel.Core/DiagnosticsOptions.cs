@@ -24,6 +24,13 @@ public sealed record DiagnosticsOptions
     public double DiskWatchQueueLength { get; init; } = 0.5;
     public double DiskActionQueueLength { get; init; } = 1;
 
+    // Page Reads/sec is corroborating evidence only. It is never treated as
+    // proof of page-file traffic without sustained RAM pressure and disk latency.
+    public double PagingWatchPageReadsPerSecond { get; init; } = 5;
+    public double PagingWatchDiskLatencyMilliseconds { get; init; } = 25;
+    public double PagingWatchDiskActivePercent { get; init; } = 50;
+    public double PagingWatchDiskQueueLength { get; init; } = 0.5;
+
     internal void Validate()
     {
         if (MinimumSamples < 2)
@@ -57,7 +64,12 @@ public sealed record DiagnosticsOptions
             DiskWatchActivePercent > DiskActionActivePercent ||
             !IsValidThreshold(DiskWatchQueueLength) ||
             !IsValidThreshold(DiskActionQueueLength) ||
-            DiskWatchQueueLength > DiskActionQueueLength)
+            DiskWatchQueueLength > DiskActionQueueLength ||
+            !IsValidThreshold(PagingWatchPageReadsPerSecond) ||
+            !IsValidThreshold(PagingWatchDiskLatencyMilliseconds) ||
+            !IsValidThreshold(PagingWatchDiskActivePercent) ||
+            PagingWatchDiskActivePercent > 100 ||
+            !IsValidThreshold(PagingWatchDiskQueueLength))
         {
             throw new ArgumentOutOfRangeException(nameof(DiagnosticsOptions), "Diagnostic thresholds are invalid.");
         }
