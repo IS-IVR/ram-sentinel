@@ -7,6 +7,7 @@ namespace RamSentinel.App.UI;
 internal sealed class MainForm : Form
 {
     private readonly WindowsMemoryProvider _memoryProvider = new();
+    private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
     private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
@@ -21,6 +22,8 @@ internal sealed class MainForm : Form
     private readonly Label _cacheLabel = new();
     private readonly Label _commitLabel = new();
     private readonly Label _cpuLabel = new();
+    private readonly Label _diskLabel = new();
+    private readonly Label _systemDriveSpaceLabel = new();
     private readonly Label _explanationLabel = new();
     private readonly ListView _processList = new();
     private readonly ListView _startupList = new();
@@ -113,21 +116,23 @@ internal sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Height = 82,
-            ColumnCount = 6,
+            ColumnCount = 8,
             RowCount = 1,
-            Padding = new Padding(8, 3, 8, 3)
+            Padding = new Padding(6, 3, 6, 3)
         };
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < 8; i++)
         {
-            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 6F));
+            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12.5F));
         }
 
-        metrics.Controls.Add(CreateMetric("סה״כ RAM", _totalLabel), 0, 0);
+        metrics.Controls.Add(CreateMetric("RAM כולל", _totalLabel), 0, 0);
         metrics.Controls.Add(CreateMetric("בשימוש", _usedLabel), 1, 0);
-        metrics.Controls.Add(CreateMetric("זמין ל-Windows", _availableLabel), 2, 0);
-        metrics.Controls.Add(CreateMetric("Cache מערכת", _cacheLabel), 3, 0);
+        metrics.Controls.Add(CreateMetric("RAM זמין", _availableLabel), 2, 0);
+        metrics.Controls.Add(CreateMetric("Cache", _cacheLabel), 3, 0);
         metrics.Controls.Add(CreateMetric("Commit", _commitLabel), 4, 0);
         metrics.Controls.Add(CreateMetric("CPU", _cpuLabel), 5, 0);
+        metrics.Controls.Add(CreateMetric("דיסק R/W", _diskLabel), 6, 0);
+        metrics.Controls.Add(CreateMetric("שטח פנוי", _systemDriveSpaceLabel), 7, 0);
 
         _processList.Dock = DockStyle.Fill;
         _processList.View = View.Details;
@@ -337,6 +342,14 @@ internal sealed class MainForm : Form
             {
                 _cpuLabel.Text = "לא זמין";
             }
+
+            DiskMetricsSnapshot disk = _diskMetricsProvider.Read();
+            _diskLabel.Text = disk.ReadLatencyMilliseconds.HasValue || disk.WriteLatencyMilliseconds.HasValue
+                ? $"R {FormatMilliseconds(disk.ReadLatencyMilliseconds)} / W {FormatMilliseconds(disk.WriteLatencyMilliseconds)}"
+                : "לא זמין";
+            _systemDriveSpaceLabel.Text = disk.SystemDriveFreeBytes.HasValue && disk.SystemDriveTotalBytes.HasValue
+                ? $"{FormatBytes(disk.SystemDriveFreeBytes.Value)} פנוי"
+                : "לא זמין";
 
             _totalLabel.Text = FormatBytes(snapshot.TotalPhysicalBytes);
             _usedLabel.Text = FormatBytes(snapshot.UsedPhysicalBytes);
@@ -652,8 +665,14 @@ internal sealed class MainForm : Form
         }
 
         _timer.Dispose();
+        _notifyIcon.Visible = false;
+        _notifyIcon.Dispose();
+        _diskMetricsProvider.Dispose();
         base.OnFormClosing(e);
     }
+
+    private static string FormatMilliseconds(double? milliseconds) =>
+        milliseconds.HasValue ? $"{milliseconds.Value:0.0}ms" : "—";
 
     private static string FormatBytes(ulong bytes)
     {
