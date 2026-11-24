@@ -315,9 +315,12 @@ public sealed class DiagnosticsEngine
         bool corroborated = HasSustained(
             samples,
             sample =>
-                GetDiskLatency(sample.Disk!) >= _options.DiskActionLatencyMilliseconds &&
-                sample.Disk!.ActiveTimePercent >= _options.DiskActionActivePercent &&
-                sample.Disk.QueueLength >= _options.DiskActionQueueLength,
+                GetDiskLatency(sample.Disk!) is double latency &&
+                latency >= _options.DiskActionLatencyMilliseconds &&
+                sample.Disk!.ActiveTimePercent is double active &&
+                active >= _options.DiskActionActivePercent &&
+                sample.Disk.QueueLength is double queue &&
+                queue >= _options.DiskActionQueueLength,
             _options.MinimumDiskDuration);
 
         var evidence = new List<FindingEvidence>
@@ -527,7 +530,7 @@ public sealed class DiagnosticsEngine
 
     private static double? GetDiskLatency(DiskMetricsSnapshot disk)
     {
-        double[] values =
+        double?[] values =
         [
             disk.ReadLatencyMilliseconds,
             disk.WriteLatencyMilliseconds
