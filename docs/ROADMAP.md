@@ -13,16 +13,16 @@
 
 ## M1 - מנוע אבחון אמין
 
-- [ ] יצירת Finding model אחיד: Category, Status, Confidence, Evidence, Duration, Impact, Recommendation, Risk ו-RestorePlan.
-- [ ] Detector ייעודי ל-RAM/Paging עם קורלציה ל-Disk.
-- [ ] Detector ל-CPU כולל זיהוי תהליך/Thread מוביל.
-- [ ] Detector ל-Disk עם latency, queue, active time וקורלציה לעומס.
-- [ ] Storage detector שמפריד מחסור שטח מצוואר בקבוק דיסק.
-- [ ] Startup impact יוצג "נמדד" רק לאחר מדידות Logon; אחרת "לא נמדד".
-- [ ] בדיקות Fixtures למדדים תקינים, חסרים, חריגים ו-Spikes.
-- [ ] מנוע Correlation ודירוג Confidence.
-- [ ] היסטוריה מקומית ל-10-30 דקות.
-- [ ] מסך "מה מאט את המחשב" עם Finding ראשי ועד שתי המלצות.
+- [x] יצירת Finding model אחיד: Category, Status, Confidence, Evidence, Duration, Impact, Recommendation, Risk ו-RestorePlan.
+- [x] Detector ללחץ RAM מתמשך לפי Available / Memory Load / Commit. Paging לא ייקבע עד לאיסוף Hard Faults אמין.
+- [x] Detector ל-CPU מתמשך עם שיוך לתהליך מוביל כאשר קיימות מספיק דגימות. זיהוי Thread עדיין לא ממומש.
+- [x] Detector ל-Disk עם latency, queue ו-active time לאורך זמן.
+- [x] Storage detector שמפריד מחסור שטח מצוואר בקבוק דיסק ומשלב נפח מוחלט ואחוז פנוי.
+- [x] Startup impact נשאר "לא נמדד" עד שתתווסף מדידת Logon אמיתית.
+- [x] בדיקות Fixtures למדדים תקינים, חסרים, חריגים, Spikes ופערי דגימה.
+- [ ] מנוע Correlation מלא בין RAM / CPU / Disk ודירוג Confidence משולב.
+- [ ] היסטוריה מקומית ל-10-30 דקות ושמירה על זיכרון מוגבל.
+- [ ] חיבור ממצאי האבחון לממשק: Finding ראשי ועד שתי המלצות פשוטות.
 
 ## M2 - Startup Manager בטוח
 
