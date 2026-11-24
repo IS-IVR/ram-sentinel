@@ -11,6 +11,7 @@ public sealed class PerformanceSampleHistory
     public const int DefaultMaximumSamples = 61;
 
     private readonly Queue<SystemPerformanceSample> _samples = new();
+    private DateTimeOffset? _lastCapturedAt;
 
     public TimeSpan Retention { get; }
     public int MaximumSamples { get; }
@@ -43,16 +44,17 @@ public sealed class PerformanceSampleHistory
     {
         ArgumentNullException.ThrowIfNull(sample);
 
-        if (_samples.TryPeek(out _) &&
-            sample.CapturedAt <= _samples.Last().CapturedAt)
+        if (_lastCapturedAt.HasValue && sample.CapturedAt <= _lastCapturedAt.Value)
         {
             return false;
         }
 
         _samples.Enqueue(sample);
+        _lastCapturedAt = sample.CapturedAt;
 
         DateTimeOffset oldestAllowed = sample.CapturedAt - Retention;
         while (_samples.TryPeek(out SystemPerformanceSample? oldest) &&
+               oldest is not null &&
                oldest.CapturedAt < oldestAllowed)
         {
             _samples.Dequeue();
@@ -72,5 +74,9 @@ public sealed class PerformanceSampleHistory
     public IReadOnlyList<SystemPerformanceSample> GetSnapshot() =>
         _samples.ToArray();
 
-    public void Clear() => _samples.Clear();
+    public void Clear()
+    {
+        _samples.Clear();
+        _lastCapturedAt = null;
+    }
 }
