@@ -564,7 +564,7 @@ public sealed class DiagnosticsEngine
     private static ProcessCpuAggregate? GetLeadingCpuProcess(
         IReadOnlyList<SystemPerformanceSample> samples)
     {
-        int minimumPresence = Math.Max(2, (int)Math.Ceiling(samples.Count * 0.5));
+        int minimumPresence = Math.Max(2, (int)Math.Ceiling(samples.Count * 0.65));
 
         return samples
             .SelectMany(sample => sample.Processes ?? [])
@@ -572,12 +572,12 @@ public sealed class DiagnosticsEngine
                 !string.IsNullOrWhiteSpace(process.Name) &&
                 process.CpuPercent.HasValue &&
                 IsValidPercentage(process.CpuPercent.Value))
-            .GroupBy(process => process.ProcessId)
+            .GroupBy(process => (process.ProcessId, process.StartedAtUtc))
             .Select(group =>
             {
                 ProcessPerformanceSample[] processSamples = group.ToArray();
                 return new ProcessCpuAggregate(
-                    ProcessId: group.Key,
+                    ProcessId: group.Key.ProcessId,
                     Name: processSamples[^1].Name,
                     AverageCpuPercent: processSamples.Average(process => process.CpuPercent!.Value),
                     SampleCount: processSamples.Length);

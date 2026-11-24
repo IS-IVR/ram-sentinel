@@ -10,8 +10,14 @@ internal sealed class MainForm : Form
     private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
-    private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
+    private readonly DiagnosticsEngine _diagnosticsEngine = new();
+    private readonly PerformanceSampleHistory _diagnosticHistory = new();
+    private readonly DiagnosticsSummaryView _diagnosticsView = new();
     private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
+    private IReadOnlyList<ProcessPerformanceSample> _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
+    private DateTimeOffset _lastDiagnosticSampleAt = DateTimeOffset.MinValue;
+    private double? _latestCpuPercent;
+    private static readonly TimeSpan DiagnosticSampleInterval = TimeSpan.FromSeconds(30);
     private readonly int _logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 30_000 };
     private readonly NotifyIcon _notifyIcon;
@@ -32,7 +38,6 @@ internal sealed class MainForm : Form
     private readonly CheckBox _startWithWindowsCheckBox = new();
     private readonly Button _closeSelectedButton = new();
     private DateTimeOffset _lastProcessRefresh = DateTimeOffset.MinValue;
-    private MemoryPressureLevel _lastPressureLevel = MemoryPressureLevel.Normal;
     private bool _allowExit;
     private bool _updatingStartupCheckBox;
 
@@ -57,7 +62,7 @@ internal sealed class MainForm : Form
 
         var trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("פתח חלון", null, (_, _) => ShowWindow());
-        trayMenu.Items.Add("רענן נתונים", null, (_, _) => RefreshAll());
+        trayMenu.Items.Add("רענן מדדים", null, (_, _) => RefreshAll());
         trayMenu.Items.Add("פתח את מנהל המשימות", null, (_, _) => OpenTaskManager());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("יציאה", null, (_, _) => ExitApplication());
@@ -79,7 +84,7 @@ internal sealed class MainForm : Form
             _updatingStartupCheckBox = true;
             _startWithWindowsCheckBox.Checked = StartupManager.IsEnabled();
             _updatingStartupCheckBox = false;
-            HideToTray();
+            _timer.Interval = 10_000;
             RefreshAll();
         };
     }
@@ -99,12 +104,12 @@ internal sealed class MainForm : Form
         _statusLabel.Dock = DockStyle.Top;
         _statusLabel.Height = 27;
         _statusLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
-        _statusLabel.Text = "ממתין לקריאת נתוני זיכרון...";
+        _statusLabel.Text = "ניטור מקומי פעיל. לא מתבצעים שינויים אוטומטיים.";
         _statusLabel.TextAlign = ContentAlignment.MiddleRight;
 
         _explanationLabel.Dock = DockStyle.Top;
         _explanationLabel.Height = 24;
-        _explanationLabel.Text = "Windows מנהלת את המטמון בעצמה. RAM Sentinel מתערבת רק כשיש סימנים ללחץ אמיתי.";
+        _explanationLabel.Text = "האבחון קורא מדדים בלבד. לא מתבצעים שינויים אוטומטיים במחשב.";
         _explanationLabel.ForeColor = SystemColors.GrayText;
         _explanationLabel.TextAlign = ContentAlignment.MiddleRight;
 
@@ -208,7 +213,7 @@ internal sealed class MainForm : Form
         };
         var startupInfo = new Label
         {
-            Text = "רשימה לקריאה בלבד. בשלב הבא תתווסף השבתה עם גיבוי ושחזור.",
+            Text = "הרשימה לקריאה בלבד. השפעת תוכנות ההפעלה עדיין לא נמדדה.",
             AutoSize = true,
             Margin = new Padding(12, 7, 12, 0),
             ForeColor = SystemColors.GrayText
@@ -223,7 +228,11 @@ internal sealed class MainForm : Form
         startupTab.Controls.Add(_startupList);
         startupTab.Controls.Add(startupToolbar);
 
+        var diagnosticsTab = new TabPage("אבחון");
+        diagnosticsTab.Controls.Add(_diagnosticsView);
+
         _mainTabs.Dock = DockStyle.Fill;
+        _mainTabs.TabPages.Add(diagnosticsTab);
         _mainTabs.TabPages.Add(processesTab);
         _mainTabs.TabPages.Add(startupTab);
         _mainTabs.SelectedIndexChanged += (_, _) =>
@@ -264,10 +273,8 @@ internal sealed class MainForm : Form
     private void RefreshAll()
     {
         RefreshSnapshot();
-        RefreshProcessList();
-        _lastProcessRefresh = DateTimeOffset.Now;
 
-        if (_mainTabs.SelectedIndex == 1)
+        if (_mainTabs.SelectedTab?.Text == "תוכנות הפעלה")
         {
             RefreshStartupList();
         }
@@ -331,22 +338,75 @@ internal sealed class MainForm : Form
     {
         try
         {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             MemorySnapshot snapshot = _memoryProvider.Read();
-            double? cpuPercent = null;
-            try
+            DiskMetricsSnapshot disk = _diskMetricsProvider.Read();
+
+            bool diagnosticSampleDue =
+                _lastDiagnosticSampleAt == DateTimeOffset.MinValue ||
+                now - _lastDiagnosticSampleAt >= DiagnosticSampleInterval;
+
+            if (diagnosticSampleDue)
             {
-                cpuPercent = _cpuUsageProvider.ReadPercent();
-                _cpuLabel.Text = cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד...";
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                _cpuLabel.Text = "לא זמין";
+                try
+                {
+                    _latestCpuPercent = _cpuUsageProvider.ReadPercent();
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    _latestCpuPercent = null;
+                }
+
+                if (_lastProcessRefresh == DateTimeOffset.MinValue ||
+                    now - _lastProcessRefresh >= DiagnosticSampleInterval)
+                {
+                    try
+                    {
+                        _lastProcessSamples = RefreshProcessList();
+                    }
+                    catch (Exception ex) when (
+                        ex is InvalidOperationException or
+                        System.ComponentModel.Win32Exception or
+                        NotSupportedException)
+                    {
+                        _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
+                    }
+
+                    _lastProcessRefresh = now;
+                }
+
+                var sample = new SystemPerformanceSample(
+                    CapturedAt: now,
+                    Memory: snapshot,
+                    CpuPercent: _latestCpuPercent,
+                    Disk: disk,
+                    Processes: _lastProcessSamples);
+
+                if (_diagnosticHistory.Add(sample))
+                {
+                    _lastDiagnosticSampleAt = now;
+                    DiagnosticReport report = _diagnosticsEngine.Evaluate(
+                        _diagnosticHistory.GetSnapshot(),
+                        now);
+
+                    _diagnosticsView.Render(report);
+
+                    _statusLabel.Text = report.IsCollecting
+                        ? "ניטור פעיל · אוספים מדידות לאורך זמן"
+                        : report.PrimaryFinding is null
+                            ? "ניטור פעיל · לא זוהה צוואר בקבוק מתמשך"
+                            : $"ניטור פעיל · {report.Findings.Count} ממצאים לבדיקה";
+                }
             }
 
-            DiskMetricsSnapshot disk = _diskMetricsProvider.Read();
+            _cpuLabel.Text = _latestCpuPercent.HasValue
+                ? $"{_latestCpuPercent.Value:0}%"
+                : "לא זמין";
+
             _diskLabel.Text = disk.ReadLatencyMilliseconds.HasValue || disk.WriteLatencyMilliseconds.HasValue
                 ? $"R {FormatMilliseconds(disk.ReadLatencyMilliseconds)} / W {FormatMilliseconds(disk.WriteLatencyMilliseconds)}"
                 : "לא זמין";
+
             _systemDriveSpaceLabel.Text = disk.SystemDriveFreeBytes.HasValue && disk.SystemDriveTotalBytes.HasValue
                 ? $"{FormatBytes(disk.SystemDriveFreeBytes.Value)} פנוי"
                 : "לא זמין";
@@ -359,43 +419,16 @@ internal sealed class MainForm : Form
                 ? $"{FormatBytes(snapshot.CommitUsedBytes)} / {FormatBytes(snapshot.CommitLimitBytes)}"
                 : "לא זמין";
 
-            MemoryPressureLevel level = _pressureEvaluator.Evaluate(snapshot, snapshot.CapturedAt);
-            _statusLabel.Text = level switch
-            {
-                MemoryPressureLevel.Normal =>
-                    $"תקין · RAM {snapshot.MemoryLoadPercent}% · CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "מודד")} · {snapshot.ProcessCount} תהליכים",
-                MemoryPressureLevel.Warning =>
-                    $"עומס זיכרון גבוה · {snapshot.MemoryLoadPercent}% · בודק אם מדובר במצב מתמשך",
-                MemoryPressureLevel.High =>
-                    $"זוהה לחץ זיכרון מתמשך · {snapshot.MemoryLoadPercent}% · בדוק את התהליכים הכבדים",
-                _ => "מצב זיכרון לא ידוע"
-            };
-
-            if (level == MemoryPressureLevel.High && _lastPressureLevel != MemoryPressureLevel.High)
-            {
-                _notifyIcon.ShowBalloonTip(
-                    5000,
-                    "RAM Sentinel זיהתה לחץ זיכרון",
-                    "בדוק אילו תוכנות משתמשות בזיכרון רב. אפשר לבקש סגירה רגילה של תוכנת משתמש, בלי לסיים תהליכי מערכת.",
-                    ToolTipIcon.Warning);
-            }
-
-            _lastPressureLevel = level;
-            _notifyIcon.Text = $"RAM {snapshot.MemoryLoadPercent}% | CPU {(cpuPercent.HasValue ? $"{cpuPercent.Value:0}%" : "...")}";
-
-            if (DateTimeOffset.Now - _lastProcessRefresh >= TimeSpan.FromSeconds(30))
-            {
-                RefreshProcessList();
-                _lastProcessRefresh = DateTimeOffset.Now;
-            }
+            _notifyIcon.Text =
+                $"RAM {snapshot.MemoryLoadPercent}% | CPU {(_latestCpuPercent.HasValue ? $"{_latestCpuPercent.Value:0}%" : "...")}";
         }
         catch (Exception ex)
         {
-            _statusLabel.Text = $"לא ניתן לקרוא נתוני זיכרון: {ex.Message}";
+            _statusLabel.Text = $"לא ניתן לקרוא נתוני ביצועים: {ex.Message}";
         }
     }
 
-    private void RefreshProcessList()
+    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList()
     {
         DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
         var rows = new List<ProcessRow>();
@@ -420,7 +453,8 @@ internal sealed class MainForm : Form
                         startedAtUtc = process.StartTime.ToUniversalTime();
                         TimeSpan totalCpuTime = process.TotalProcessorTime;
 
-                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample previous) &&
+                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample? previous) &&
+                            previous is not null &&
                             previous.StartTimeUtc == startedAtUtc.Value)
                         {
                             cpuPercent = CpuUsageCalculator.Calculate(
@@ -494,6 +528,14 @@ internal sealed class MainForm : Form
         }
 
         _closeSelectedButton.Enabled = _processList.SelectedItems.Count == 1;
+
+        return rows.Select(row => new ProcessPerformanceSample(
+            ProcessId: row.ProcessId,
+            Name: row.Name,
+            CpuPercent: row.CpuPercent,
+            WorkingSetBytes: (ulong)Math.Max(0, row.WorkingSetBytes),
+            PrivateBytes: (ulong)Math.Max(0, row.PrivateBytes),
+            StartedAtUtc: row.StartTimeUtc)).ToArray();
     }
 
     private void CloseSelectedApplication()
