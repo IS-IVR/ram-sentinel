@@ -20,7 +20,10 @@ internal static class DiagnosticsEngineChecks
         ("Startup impact stays explicitly unmeasured", TestStartupIsUnmeasured),
         ("Long sampling gaps prevent a sustained diagnosis", TestSamplingGap),
         ("No samples produce a collecting report", TestNoSamples),
-        ("Invalid storage capacity is not interpreted as zero space", TestInvalidStorage)
+        ("Invalid storage capacity is not interpreted as zero space", TestInvalidStorage),
+        ("In-memory history removes expired samples", TestHistoryRetention),
+        ("In-memory history enforces a maximum sample count", TestHistoryMaximumCount),
+        ("In-memory history rejects duplicate and out-of-order samples", TestHistoryOrdering)
     ];
 
     private static void TestSustainedMemoryPressure()
@@ -220,6 +223,54 @@ internal static class DiagnosticsEngineChecks
             "Free space greater than total capacity is invalid data, not a storage finding.");
         Assert(report.UnavailableCategories.Contains(DiagnosticCategory.Storage),
             "Invalid storage data should be marked unavailable.");
+    }
+
+
+
+    private static void TestHistoryRetention()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var history = new PerformanceSampleHistory(TimeSpan.FromMinutes(1), maximumSamples: 10);
+
+        Assert(history.Add(CreateSample(start)), "The first history sample should be accepted.");
+        Assert(history.Add(CreateSample(start.AddSeconds(30))), "The second history sample should be accepted.");
+        Assert(history.Add(CreateSample(start.AddSeconds(60))), "The third history sample should be accepted.");
+        Assert(history.Add(CreateSample(start.AddSeconds(90))), "The fourth history sample should be accepted.");
+
+        IReadOnlyList<SystemPerformanceSample> snapshot = history.GetSnapshot();
+        Assert(snapshot.Count == 3, $"Expected 3 retained samples, got {snapshot.Count}.");
+        Assert(snapshot[0].CapturedAt == start.AddSeconds(30), "Samples older than the retention window should be removed.");
+        Assert(snapshot[^1].CapturedAt == start.AddSeconds(90), "The newest sample should remain.");
+    }
+
+    private static void TestHistoryMaximumCount()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var history = new PerformanceSampleHistory(TimeSpan.FromHours(1), maximumSamples: 3);
+
+        for (int index = 0; index < 5; index++)
+        {
+            Assert(history.Add(CreateSample(start.AddSeconds(index))), "Increasing timestamps should be accepted.");
+        }
+
+        IReadOnlyList<SystemPerformanceSample> snapshot = history.GetSnapshot();
+        Assert(snapshot.Count == 3, $"Expected a maximum of 3 samples, got {snapshot.Count}.");
+        Assert(snapshot[0].CapturedAt == start.AddSeconds(2), "The oldest samples should be discarded when the cap is reached.");
+    }
+
+    private static void TestHistoryOrdering()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var history = new PerformanceSampleHistory();
+
+        Assert(history.Add(CreateSample(start)), "The initial sample should be accepted.");
+        Assert(!history.Add(CreateSample(start)), "A duplicate timestamp should be rejected.");
+        Assert(!history.Add(CreateSample(start.AddSeconds(-1))), "An older timestamp should be rejected.");
+        Assert(history.Count == 1, "Rejected samples must not modify the history.");
+
+        history.Clear();
+        Assert(history.Count == 0, "Clear should empty the history.");
+        Assert(history.Add(CreateSample(start.AddSeconds(-10))), "A new baseline should be accepted after Clear.");
     }
 
     private static IReadOnlyList<SystemPerformanceSample> CreateSeries(
