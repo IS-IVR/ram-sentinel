@@ -453,7 +453,8 @@ internal sealed class MainForm : Form
                         startedAtUtc = process.StartTime.ToUniversalTime();
                         TimeSpan totalCpuTime = process.TotalProcessorTime;
 
-                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample previous) &&
+                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample? previous) &&
+                            previous is not null &&
                             previous.StartTimeUtc == startedAtUtc.Value)
                         {
                             cpuPercent = CpuUsageCalculator.Calculate(
