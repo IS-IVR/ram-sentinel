@@ -27,7 +27,7 @@ Do not advertise a fixed percentage speed increase. Results depend on the actual
 
 ## Product experience
 
-The detailed UX specification is maintained in [docs/UX_DESIGN.md](UX_DESIGN.md). The framework decision and low-end hardware benchmark gate are documented in [docs/UI_FRAMEWORK_DECISION.md](UI_FRAMEWORK_DECISION.md). The diagnostic evidence model is documented in [docs/DIAGNOSTICS_ENGINE.md](DIAGNOSTICS_ENGINE.md).
+The detailed UX specification is maintained in [docs/UX_DESIGN.md](UX_DESIGN.md). The framework decision and low-end hardware benchmark gate are documented in [docs/UI_FRAMEWORK_DECISION.md](UI_FRAMEWORK_DECISION.md). The diagnostic evidence model is documented in [docs/DIAGNOSTICS_ENGINE.md](DIAGNOSTICS_ENGINE.md). The application lifecycle manager is specified in [docs/APPLICATION_LIFECYCLE_MANAGER.md](APPLICATION_LIFECYCLE_MANAGER.md).
 
 ### 1. Quick diagnosis (read-only)
 
@@ -90,7 +90,62 @@ The first implementation now inventories common Run keys and Startup folders in 
 Microsoft documents startup management in Settings and Task Manager, and Task Manager's startup impact uses measured CPU time and disk I/O rather than an arbitrary label:
 https://support.microsoft.com/en-us/windows/experience/startup-boot/configure-startup-applications-in-windows
 
-### 5. Bottleneck diagnosis
+## Smart Application Lifecycle Manager
+
+This capability manages heavy applications as application sessions, not as an indiscriminate list of processes. Its purpose is to find two different situations:
+
+1. A main application has exited but one or more helper processes may remain.
+2. A user application has stayed in the background for a sustained period, is not showing signs of active work, and is retaining meaningful memory while Windows is under sustained memory pressure.
+
+The complete design, proposed components, data boundaries, implementation phases, safety rules, and acceptance tests are documented in [APPLICATION_LIFECYCLE_MANAGER.md](APPLICATION_LIFECYCLE_MANAGER.md).
+
+### Workflow A - helpers after the main application exits
+
+- Observe process relationships while a user application is running; do not infer ownership from an executable name or one parent PID snapshot.
+- Track stable process identity using PID plus creation time and validate executable identity where possible.
+- When the main process exits, wait and revalidate candidate helpers.
+- Check active work and profile-specific completion evidence. Low CPU, no visible window, or a short quiet interval does not prove a helper is disposable.
+- A process such as FFmpeg may still be rendering or writing output after its editor closes. It must not be closed from its name or parent relationship alone.
+- A local AI runtime may intentionally retain a model in memory. Preserve that model by default.
+- Automatic helper cleanup is eligible only for an explicitly trusted application profile, explicit user opt-in, a validated relationship, evidence that the task completed, and a documented graceful shutdown adapter for that exact helper role.
+- If no safe adapter exists, keep the process running. Never send generic keystrokes, Ctrl+C, arbitrary stdin data, or forced termination.
+
+### Workflow B - inactive user applications
+
+Recommended first-version defaults:
+- Inactivity means time since the application was last in the foreground, not merely that the window is minimized.
+- Use a default 5-minute foreground inactivity period and multiple valid activity samples.
+- Correlate CPU and process I/O deltas with profile-specific signals such as rendering, loading, syncing, playback, or downloads.
+- Require sustained memory pressure from the existing diagnosis engine by default. High memory occupancy alone does not trigger a close suggestion.
+- Show working set and private bytes separately. Do not present either as guaranteed memory reclaim.
+- Ask the user before closing. The notification offers a normal close request, a reminder later, or ignoring that application.
+- Cancel a pending suggestion if the user returns to that application.
+- No automatic application closure in this workflow.
+
+### Architecture and safety boundary
+
+The lifecycle manager is separate from `DiagnosticsEngine`. It consumes the existing system memory-pressure state and process observations, then returns lifecycle states or recommendations. Windows-specific process and foreground collectors are kept out of the core policy logic.
+
+Suggested components include:
+- `ProcessInventoryProvider` and `ProcessRelationshipTracker`.
+- `ForegroundApplicationTracker`.
+- `ApplicationProfileCatalog` and `ApplicationSessionTracker`.
+- `ActivityClassifier` and `LifecyclePolicyEngine`.
+- `GracefulShutdownService`.
+- `LifecycleNotificationService` and `LifecycleHistoryStore`.
+
+User-facing applications are closed only through a normal close request after identity and foreground state are revalidated and the user approves. A timeout or refusal is recorded as "still running"; it never leads to forced termination. Unknown, protected, security, accessibility, backup, and ambiguous processes are observation-only.
+
+### Privacy and overhead
+
+- Track foreground changes through Windows events when available; do not capture keystrokes, mouse input, window titles, document names, or command-line arguments.
+- Keep process sessions in memory by default.
+- Persist only local preferences, deferrals/ignores, and minimal action history.
+- Reuse existing process sampling; do not add a second high-frequency process polling loop.
+- Do not start a Windows Service or elevated agent for the first version.
+- Profile RAM Sentinel's own CPU, memory, wakeups, and disk activity before enabling this feature by default.
+
+## Bottleneck diagnosis
 
 #### Memory
 High RAM occupancy alone is not enough. Combine Available Physical Memory, Commit percentage, sustained pressure, process private bytes, and disk paging activity. System cache/standby pages are not disposable waste.
