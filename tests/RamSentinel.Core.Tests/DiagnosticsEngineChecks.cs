@@ -9,6 +9,11 @@ internal static class DiagnosticsEngineChecks
         ("Sustained RAM pressure creates a cautious finding", TestSustainedMemoryPressure),
         ("A brief RAM spike is ignored", TestBriefMemorySpike),
         ("Low available RAM alone is not called critical", TestMemoryPressureNeedsCorroboration),
+        ("Sustained hard-fault reads plus disk load strengthen RAM diagnosis", TestSustainedPagingCorrelation),
+        ("Page reads without disk load do not strengthen RAM diagnosis", TestPagingNeedsDiskCorrelation),
+        ("Write latency alone does not corroborate page reads", TestPagingNeedsReadLatency),
+        ("Page reads without RAM pressure do not create a RAM finding", TestPagingWithoutMemoryPressure),
+        ("Invalid paging counters do not increase confidence", TestInvalidPagingMetrics),
         ("Sustained CPU load identifies a leading process", TestSustainedCpuLoad),
         ("Reused process IDs are not merged into one attribution", TestProcessIdReuse),
         ("A brief CPU spike is ignored", TestBriefCpuSpike),
@@ -65,6 +70,126 @@ internal static class DiagnosticsEngineChecks
         PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
         Assert(finding.Status == FindingStatus.Watch, "Low available RAM alone should be a Watch finding, not a critical action.");
         Assert(finding.Confidence == ConfidenceLevel.Low, "Single-signal memory pressure must have Low confidence.");
+    }
+
+    private static void TestSustainedPagingCorrelation()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 4,
+                memoryLoad: 96,
+                commitPercent: 95,
+                readLatency: 80,
+                writeLatency: 70,
+                activePercent: 90,
+                queueLength: 2,
+                pageReadsPerSecond: 20,
+                pagesInputPerSecond: 120));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
+
+        Assert(finding.Confidence == ConfidenceLevel.High,
+            "Confidence should increase only when critical RAM pressure, page reads, and active high-latency disk samples persist together.");
+        Assert(finding.Summary.Contains("אינו מוכיח", StringComparison.Ordinal),
+            "The explanation must clarify that page-read counters do not identify page-file-only traffic.");
+        Assert(finding.Evidence.Any(item => item.Metric.Contains("Page Reads/sec", StringComparison.Ordinal)),
+            "The measured page-read rate should appear in the evidence.");
+    }
+
+    private static void TestPagingNeedsDiskCorrelation()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 4,
+                memoryLoad: 96,
+                commitPercent: 95,
+                readLatency: 3,
+                writeLatency: 4,
+                activePercent: 10,
+                queueLength: 0.1,
+                pageReadsPerSecond: 20,
+                pagesInputPerSecond: 120));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
+
+        Assert(finding.Confidence == ConfidenceLevel.Medium,
+            "Page reads without concurrent disk latency and activity must not increase confidence.");
+    }
+
+    private static void TestPagingNeedsReadLatency()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 4,
+                memoryLoad: 96,
+                commitPercent: 95,
+                readLatency: 3,
+                writeLatency: 80,
+                activePercent: 90,
+                queueLength: 2,
+                pageReadsPerSecond: 20,
+                pagesInputPerSecond: 120));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
+
+        Assert(finding.Confidence == ConfidenceLevel.Medium,
+            "High write latency without high read latency must not be attributed to hard-page-fault reads.");
+    }
+
+    private static void TestPagingWithoutMemoryPressure()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 40,
+                memoryLoad: 60,
+                commitPercent: 60,
+                readLatency: 80,
+                writeLatency: 70,
+                activePercent: 90,
+                queueLength: 2,
+                pageReadsPerSecond: 20,
+                pagesInputPerSecond: 120));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+
+        Assert(!report.Findings.Any(finding => finding.Category == DiagnosticCategory.Memory),
+            "Page reads and disk activity alone must not be described as a RAM bottleneck.");
+    }
+
+    private static void TestInvalidPagingMetrics()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var samples = CreateSeries(start, (_, at) =>
+            CreateSample(
+                at,
+                availablePercent: 4,
+                memoryLoad: 96,
+                commitPercent: 95,
+                readLatency: 80,
+                writeLatency: 70,
+                activePercent: 90,
+                queueLength: 2,
+                pageReadsPerSecond: double.NaN,
+                pagesInputPerSecond: double.PositiveInfinity));
+
+        DiagnosticReport report = new DiagnosticsEngine().Evaluate(samples);
+        PerformanceFinding finding = Find(report, DiagnosticCategory.Memory);
+
+        Assert(finding.Confidence == ConfidenceLevel.Medium,
+            "NaN and infinite paging values must be rejected and cannot increase confidence.");
+        Assert(!finding.Evidence.Any(item => item.Metric.Contains("Page Reads/sec", StringComparison.Ordinal)),
+            "Invalid paging values must not appear as measured evidence.");
     }
 
     private static void TestSustainedCpuLoad()
@@ -323,7 +448,9 @@ internal static class DiagnosticsEngineChecks
         double? queueLength = 0.1,
         ulong? freeGiB = 100,
         ulong? totalGiB = 500,
-        IReadOnlyList<ProcessPerformanceSample>? processes = null)
+        IReadOnlyList<ProcessPerformanceSample>? processes = null,
+        double? pageReadsPerSecond = null,
+        double? pagesInputPerSecond = null)
     {
         const ulong totalRam = 16 * GiB;
         const ulong commitLimit = 24 * GiB;
@@ -353,7 +480,10 @@ internal static class DiagnosticsEngineChecks
             Memory: memory,
             CpuPercent: cpuPercent,
             Disk: disk,
-            Processes: processes ?? []);
+            Processes: processes ?? [],
+            Paging: pageReadsPerSecond.HasValue || pagesInputPerSecond.HasValue
+                ? new PagingMetricsSnapshot(pageReadsPerSecond, pagesInputPerSecond)
+                : null);
     }
 
     private static PerformanceFinding Find(DiagnosticReport report, DiagnosticCategory category) =>

@@ -14,7 +14,8 @@
 ## M1 - מנוע אבחון אמין
 
 - [x] יצירת Finding model אחיד: Category, Status, Confidence, Evidence, Duration, Impact, Recommendation, Risk ו-RestorePlan.
-- [x] Detector ללחץ RAM מתמשך לפי Available / Memory Load / Commit. Paging לא ייקבע עד לאיסוף Hard Faults אמין.
+- [x] איסוף Page Reads/sec ו-Page Inputs/sec לקריאה בלבד, כהשלמה למדדי Available / Memory Load / Commit.
+- [x] הצלבת קריאות דף עם לחץ RAM מתמשך וזמן תגובה/פעילות דיסק; המדדים אינם מוכיחים תעבורה מקובץ ההחלפה בלבד.
 - [x] Detector ל-CPU מתמשך עם שיוך לתהליך מוביל כאשר קיימות מספיק דגימות. זיהוי Thread עדיין לא ממומש.
 - [x] Detector ל-Disk עם latency, queue ו-active time לאורך זמן.
 - [x] Storage detector שמפריד מחסור שטח מצוואר בקבוק דיסק ומשלב נפח מוחלט ואחוז פנוי.

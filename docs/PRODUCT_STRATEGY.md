@@ -93,7 +93,7 @@ https://support.microsoft.com/en-us/windows/experience/startup-boot/configure-st
 ### 5. Bottleneck diagnosis
 
 #### Memory
-High RAM occupancy alone is not enough. Combine Available Physical Memory, Commit percentage, sustained pressure, process private bytes, and disk paging activity. System cache/standby pages are not disposable waste.
+High RAM occupancy alone is not enough. Combine Available Physical Memory, Commit percentage, sustained pressure, process private bytes, Page Reads/sec, and disk latency/activity. Hard Page Reads can also come from executable images and memory-mapped files, so they are corroborating evidence, not proof of page-file traffic. System cache/standby pages are not disposable waste.
 
 #### CPU
 Measure per-process CPU from deltas in cumulative process CPU time. Normalize by logical processor count and sample duration. Show both system-wide CPU and top processes. Do not change process priority or affinity automatically.
