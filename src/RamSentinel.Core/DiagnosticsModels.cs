@@ -54,12 +54,21 @@ public sealed record ProcessPerformanceSample(
 /// One immutable point in the local performance history.
 /// Missing collectors are represented by null, never by fabricated zero values.
 /// </summary>
+/// <summary>
+/// System-wide hard-page-fault read activity. These counters include reads for
+/// executable images and memory-mapped files, not only reads from the page file.
+/// </summary>
+public sealed record PagingMetricsSnapshot(
+    double? PageReadsPerSecond,
+    double? PagesInputPerSecond);
+
 public sealed record SystemPerformanceSample(
     DateTimeOffset CapturedAt,
     MemorySnapshot? Memory = null,
     double? CpuPercent = null,
     DiskMetricsSnapshot? Disk = null,
-    IReadOnlyList<ProcessPerformanceSample>? Processes = null);
+    IReadOnlyList<ProcessPerformanceSample>? Processes = null,
+    PagingMetricsSnapshot? Paging = null);
 
 public sealed record FindingEvidence(
     string Metric,
