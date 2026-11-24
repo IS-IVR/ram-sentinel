@@ -84,6 +84,8 @@ The Startup manager is the first major user-visible optimizer:
 - Machine-wide entries require a separate elevated workflow and are out of scope for the first version.
 - Never disable security software, accessibility tools, input drivers, backup software, or unknown components automatically.
 
+The first implementation now inventories common Run keys and Startup folders in read-only mode. It does not disable or edit entries.
+
 Microsoft documents startup management in Settings and Task Manager, and Task Manager's startup impact uses measured CPU time and disk I/O rather than an arbitrary label:
 https://support.microsoft.com/en-us/windows/experience/startup-boot/configure-startup-applications-in-windows
 
@@ -156,12 +158,12 @@ Report the median, not the best run. If the result is within measurement noise o
 ### M1 - Trusted diagnosis
 - Per-process CPU measurement.
 - Adaptive low-overhead sampling.
+- Read-only startup inventory.
 - Disk latency/queue diagnostics.
 - Free-space check.
 - Clear bottleneck explanation.
 
 ### M2 - Startup and background management
-- Read-only inventory.
 - User-scope disable with exact backup.
 - Restore and audit log.
 - Startup impact measured over repeated boots/logons.

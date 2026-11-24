@@ -7,6 +7,7 @@ namespace RamSentinel.App.UI;
 internal sealed class MainForm : Form
 {
     private readonly WindowsMemoryProvider _memoryProvider = new();
+    private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
     private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
     private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
@@ -22,6 +23,9 @@ internal sealed class MainForm : Form
     private readonly Label _cpuLabel = new();
     private readonly Label _explanationLabel = new();
     private readonly ListView _processList = new();
+    private readonly ListView _startupList = new();
+    private readonly TabControl _mainTabs = new();
+    private DateTimeOffset _lastStartupRefresh = DateTimeOffset.MinValue;
     private readonly CheckBox _startWithWindowsCheckBox = new();
     private readonly Button _closeSelectedButton = new();
     private DateTimeOffset _lastProcessRefresh = DateTimeOffset.MinValue;
@@ -137,6 +141,17 @@ internal sealed class MainForm : Form
         _processList.Columns.Add("RAM פיזי", 125);
         _processList.Columns.Add("זיכרון פרטי", 125);
 
+        _startupList.Dock = DockStyle.Fill;
+        _startupList.View = View.Details;
+        _startupList.FullRowSelect = true;
+        _startupList.GridLines = true;
+        _startupList.HideSelection = false;
+        _startupList.Columns.Add("שם", 180);
+        _startupList.Columns.Add("היקף", 105);
+        _startupList.Columns.Add("מקור", 270);
+        _startupList.Columns.Add("יעד", 90);
+        _startupList.Columns.Add("פקודת הפעלה", 420);
+
         var processMenu = new ContextMenuStrip();
         processMenu.Items.Add("בקש סגירה רגילה של התוכנה...", null, (_, _) => CloseSelectedApplication());
         _processList.ContextMenuStrip = processMenu;
@@ -174,7 +189,48 @@ internal sealed class MainForm : Form
         footer.Controls.Add(taskManagerButton);
         footer.Controls.Add(hideButton);
 
-        Controls.Add(_processList);
+        var processesTab = new TabPage("תהליכים");
+        processesTab.Controls.Add(_processList);
+
+        var startupTab = new TabPage("תוכנות הפעלה");
+        var startupToolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 42,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Padding = new Padding(8, 5, 8, 4)
+        };
+        var startupInfo = new Label
+        {
+            Text = "רשימה לקריאה בלבד. בשלב הבא תתווסף השבתה עם גיבוי ושחזור.",
+            AutoSize = true,
+            Margin = new Padding(12, 7, 12, 0),
+            ForeColor = SystemColors.GrayText
+        };
+        var refreshStartupButton = new Button { Text = "רענן רשימה", AutoSize = true };
+        refreshStartupButton.Click += (_, _) => RefreshStartupList();
+        var openStartupSettingsButton = new Button { Text = "פתח הגדרות Windows", AutoSize = true };
+        openStartupSettingsButton.Click += (_, _) => OpenStartupSettings();
+        startupToolbar.Controls.Add(startupInfo);
+        startupToolbar.Controls.Add(refreshStartupButton);
+        startupToolbar.Controls.Add(openStartupSettingsButton);
+        startupTab.Controls.Add(_startupList);
+        startupTab.Controls.Add(startupToolbar);
+
+        _mainTabs.Dock = DockStyle.Fill;
+        _mainTabs.TabPages.Add(processesTab);
+        _mainTabs.TabPages.Add(startupTab);
+        _mainTabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (_mainTabs.SelectedTab == startupTab &&
+                DateTimeOffset.Now - _lastStartupRefresh > TimeSpan.FromMinutes(5))
+            {
+                RefreshStartupList();
+            }
+        };
+
+        Controls.Add(_mainTabs);
         Controls.Add(footer);
         Controls.Add(metrics);
         Controls.Add(header);
@@ -205,6 +261,65 @@ internal sealed class MainForm : Form
         RefreshSnapshot();
         RefreshProcessList();
         _lastProcessRefresh = DateTimeOffset.Now;
+
+        if (_mainTabs.SelectedIndex == 1)
+        {
+            RefreshStartupList();
+        }
+    }
+
+    private void RefreshStartupList()
+    {
+        try
+        {
+            IReadOnlyList<StartupEntry> entries = _startupInventoryProvider.ReadAll();
+            _startupList.BeginUpdate();
+            try
+            {
+                _startupList.Items.Clear();
+                foreach (StartupEntry entry in entries)
+                {
+                    var item = new ListViewItem(entry.Name);
+                    item.SubItems.Add(entry.Scope);
+                    item.SubItems.Add(entry.Source);
+                    item.SubItems.Add(entry.TargetStatus);
+                    item.SubItems.Add(entry.Command);
+                    _startupList.Items.Add(item);
+                }
+            }
+            finally
+            {
+                _startupList.EndUpdate();
+            }
+
+            _lastStartupRefresh = DateTimeOffset.Now;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                $"לא ניתן לקרוא את רשימת תוכנות ההפעלה: {ex.Message}",
+                "RAM Sentinel",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    private void OpenStartupSettings()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:startup") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                $"לא ניתן לפתוח את הגדרות ההפעלה של Windows: {ex.Message}",
+                "RAM Sentinel",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
     }
 
     private void RefreshSnapshot()

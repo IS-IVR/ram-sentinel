@@ -10,7 +10,7 @@
 
 אוספים מקומיים וקריאה בלבד:
 - Memory: Total / Available / Commit / Commit Limit / System Cache / Kernel pools.
-- CPU: GetSystemTimes, בהמשך GetProcessTimes או TotalProcessorTime לפי תהליך.
+- CPU: GetSystemTimes, TotalProcessorTime לפי תהליך.
 - Disk: נפח פנוי, latency ו-queue באמצעות PDH בקצב נמוך.
 - Startup: Run keys, Startup folders ובהמשך Logon Scheduled Tasks.
 - Power: Power mode / AC state כאשר אפשר לקרוא זאת באופן אמין.
@@ -57,6 +57,7 @@
 ### RamSentinel.App
 - WindowsMemoryProvider
 - WindowsCpuUsageProvider
+- StartupInventoryProvider (קריאה בלבד)
 - StartupManager
 - MainForm
 
@@ -65,38 +66,43 @@
 
 ## איסוף CPU לפי תהליך
 
-לכל PID נשמרים:
-- Process StartTime (כדי לזהות שימוש חוזר ב-PID).
-- TotalProcessorTime.
-- זמן דגימה.
+לכל PID נשמרים Process StartTime, TotalProcessorTime וזמן הדגימה. החישוב:
 
-החישוב:
 CPU% = DeltaProcessCpuTime / (DeltaWallTime * LogicalProcessorCount) * 100
 
-דגימה ראשונה משמשת כ-baseline. תהליכים שיצאו מוסרים מה-cache. האחוז מנורמל לכל קיבולת CPU של המכונה, כך שתהליך המשתמש בליבה לוגית אחת במחשב עם ארבע ליבות לוגיות יציג בערך 25%.
+הדגימה הראשונה משמשת כ-baseline. תהליכים שיצאו מוסרים מה-cache. האחוז מנורמל לכל קיבולת CPU של המכונה, כך שתהליך המשתמש בליבה לוגית אחת במחשב עם ארבע ליבות לוגיות יציג בערך 25%.
 
-## תדירות איסוף
+## Startup Inventory
 
-- כשהחלון מוסתר: מדדי מערכת כל 30 שניות.
-- כשהחלון פתוח: מדדי מערכת כל 10 שניות.
-- רשימת תהליכים כל 30 שניות.
-- מדדי Disk דרך PDH, כשימומשו, ייאספו לכל היותר פעם בשנייה ובדרך כלל כל 5-10 שניות.
-- אין polling מהיר או timers תכופים כשהיישום במגש.
+הגרסה הנוכחית קוראת בלבד:
+- HKCU Run.
+- HKLM Run.
+- Startup Folder של המשתמש.
+- Startup Folder משותפת.
 
-## Startup Manager - תכנון
+פקודות Registry מוצגות כמו שנשמרו. זיהוי קובץ היעד הוא הערכה בסיסית בלבד, ולא הוכחה שהפריט נחוץ או בטוח. אין עדיין השבתה מתוך האפליקציה.
 
-הגרסה הראשונה תציג Inventory בלבד. בשלב השני תתאפשר השבתה של פריטי HKCU בלבד:
-1. שמירת ה-path, value name, type, raw command ונתוני המקור.
-2. כתיבת Backup לפני מחיקה/העברה.
+בשלב הבא ניתן יהיה להשבית פריטי HKCU בלבד:
+1. שמירת path, value name, kind, raw command ונתוני המקור.
+2. כתיבת Backup לפני שינוי.
 3. אישור משתמש.
 4. השבתה של פריט בודד בלבד.
 5. Restore מדויק, בדיקת התנגשות ויומן פעולה.
 
 פריטי HKLM, Services, Drivers ו-Scheduled Tasks לא יושבתו אוטומטית. Machine-wide changes דורשים תכנון הרשאות ושחזור נפרד.
 
+## תדירות איסוף
+
+- כשהחלון מוסתר: מדדי מערכת כל 30 שניות.
+- כשהחלון פתוח: מדדי מערכת כל 10 שניות.
+- רשימת תהליכים כל 30 שניות.
+- Startup Inventory נסרק בעת פתיחת הלשונית או רענון ידני.
+- מדדי Disk דרך PDH, כשימומשו, ייאספו לכל היותר פעם בשנייה ובדרך כלל כל 5-10 שניות.
+- אין polling מהיר או timers תכופים כשהיישום במגש.
+
 ## אבחון דיסק
 
-PDH מספק ממשק איסוף מוני ביצועים. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length / Disk Transfers/sec לפי זמינות המונים והשפה. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
+PDH מספק ממשק איסוף מוני ביצועים. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-Disk Transfers/sec לפי זמינות המונים. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
 
 ## פעולות Windows מובנות
 
