@@ -3,65 +3,63 @@
 ## M0 - ניטור קיים
 
 - [x] ניטור RAM / Available / Commit / Cache / Kernel.
-- [x] ניטור CPU כולל.
-- [x] מדידת CPU לפי תהליך באמצעות הפרשי TotalProcessorTime.
-- [x] זיהוי לחץ זיכרון מתמשך.
-- [x] הצגת תהליכים שמובילים גם ב-RAM וגם ב-CPU.
-- [x] חלון Tray עברי.
+- [x] ניטור CPU כולל ולפי תהליך.
+- [x] PDH Disk latency / queue ושטח פנוי בכונן Windows.
 - [x] Startup Inventory לקריאה בלבד עבור Run keys ו-Startup folders.
-- [x] הורדת תדירות הניטור במגש ל-30 שניות.
+- [x] רשימת תהליכים שמשלבת CPU ו-RAM.
+- [x] חלון Tray בעברית.
 - [x] בדיקות לוגיקה בסיסיות ו-GitHub Actions.
-- [ ] בדיקת Build והרצה על Windows 11 במחשב פיזי.
-- [ ] מדידת צריכת RAM/CPU של התוכנה עצמה לאורך 24 שעות.
+- [ ] בדיקת 24 שעות על מחשב Windows חלש.
 
-## M1 - אבחון ביצועים מלא
+## M1 - מנוע אבחון אמין
 
-- [x] בדיקות חישוב CPU ונקודות קצה בסיסיות.
-- [ ] בדיקות אינטגרציה לתהליכים אמיתיים, PID reuse ותהליך שנעלם.
-- [x] מדידת Disk latency / queue דרך PDH (יש לאמת זמינות מונים בזמן ריצה במחשבים שונים).
-- [x] הצגת נפח פנוי בכונן Windows.
-- [ ] היסטוריית RAM/CPU/Disk ל-10 דקות.
-- [ ] מנוע Diagnosis שמציג bottleneck עיקרי אחד והוכחות.
-- [ ] זיהוי גידול בזיכרון פרטי לאורך זמן.
-- [ ] ספי לחץ ניתנים להגדרה עם ברירות מחדל שמרניות.
+- [ ] יצירת Finding model אחיד: Category, Status, Confidence, Evidence, Duration, Impact, Recommendation, Risk ו-RestorePlan.
+- [ ] Detector ייעודי ל-RAM/Paging עם קורלציה ל-Disk.
+- [ ] Detector ל-CPU כולל זיהוי תהליך/Thread מוביל.
+- [ ] Detector ל-Disk עם latency, queue, active time וקורלציה לעומס.
+- [ ] Storage detector שמפריד מחסור שטח מצוואר בקבוק דיסק.
+- [ ] Startup impact יוצג "נמדד" רק לאחר מדידות Logon; אחרת "לא נמדד".
+- [ ] בדיקות Fixtures למדדים תקינים, חסרים, חריגים ו-Spikes.
+- [ ] מנוע Correlation ודירוג Confidence.
+- [ ] היסטוריה מקומית ל-10-30 דקות.
+- [ ] מסך "מה מאט את המחשב" עם Finding ראשי ועד שתי המלצות.
 
-## M2 - Startup Manager (העדיפות הראשונה לאופטימיזציה)
+## M2 - Startup Manager בטוח
 
 - [x] Inventory לקריאה בלבד של HKCU/HKLM Run ו-Startup folders.
-- [x] הצגת מקור, פקודה, היקף ומצב קיום בסיסי של קובץ יעד.
-- [ ] השוואה מול Startup Apps של Windows ככל האפשר.
-- [ ] השבתת פריטי HKCU בלבד, פריט אחד בכל פעולה.
-- [ ] Backup מדויק לפני כל שינוי.
-- [ ] Restore ובדיקת התנגשות.
-- [ ] יומן פעולות מקומי.
-- [ ] מדידת זמן כניסה ל-idle לאורך מספר כניסות למערכת.
-- [ ] אין השבתת שירותים/דרייברים/משימות מערכת.
+- [ ] Publisher וזיהוי מקור אמין.
+- [ ] השבתת HKCU entry אחד בכל פעולה.
+- [ ] Backup מדויק של Registry/Shortcut לפני שינוי.
+- [ ] Restore, collision check ו-Audit log.
+- [ ] מדידת Logon-to-Idle על מספר כניסות.
+- [ ] אין השבתת HKLM, שירותים, דרייברים או פריטי אבטחה אוטומטית.
 
-## M3 - אופטימיזציות מונחות
+## M3 - ממשק בסגנון Windows 11 Explorer
 
-- [ ] המלצות על אפליקציות רקע עם ראיות של CPU/RAM/Disk.
-- [ ] סגירה רגילה באישור המשתמש בלבד.
-- [ ] פתיחת Storage Sense / Cleanup Recommendations.
-- [ ] פתיחת Optimize Drives של Windows.
-- [ ] פרופיל Visual Effects, דרך כלי Windows והסבר על הפגיעה במראה.
-- [ ] Power mode: הצעה מותנית AC/Battery והסבר על חום/צריכת חשמל.
-- [ ] Restore לכל שינוי שניתן לנהל מתוך המוצר.
+- [ ] מפרט UX מאושר ומתוחזק ב-docs/UX_DESIGN.md.
+- [ ] Proof of Concept ב-WinUI 3 עם NavigationView / CommandBar / Breadcrumbs / Details Pane.
+- [ ] Benchmark של WinUI 3 מול WinForms במחשב חלש.
+- [ ] החלטה על Framework לפי cold start, idle memory, CPU ו-package size.
+- [ ] Home, Diagnose, Processes, Startup, Storage, History, Settings.
+- [ ] תמיכה מלאה בעברית RTL, Light/Dark, DPI ו-High Contrast.
+- [ ] Virtualized Details List וטעינת נתונים הדרגתית.
 
-## M4 - אימות תוצאות
+## M4 - אופטימיזציות מונחות ואימות
 
-- [ ] אשף Before/After עם אותו workload.
-- [ ] שלוש ריצות לפחות וחישוב Median.
-- [ ] מדידת CPU/RAM/Disk בזמן המשימה.
-- [ ] הצגת "לא נמצא שיפור מדיד" כשזה המצב.
-- [ ] בדיקות על HDD ו-SSD, 4/8/16 GB RAM.
-- [ ] בדיקת 24 שעות וצריכת משאבים עצמית.
+- [ ] המלצות מבוססות Evidence ולא "טוויקים" גורפים.
+- [ ] Storage Sense / Optimize Drives / Power settings דרך Windows.
+- [ ] Visual Effects profile עם הסבר ושחזור.
+- [ ] Before/After, לפחות שלוש ריצות ו-Median.
+- [ ] לאמת שיפור בפתיחת תוכנה, זמן Logon, CPU, Disk ו-Multitasking.
+- [ ] "לא נמצא שיפור מדיד" כאשר זה המצב.
 
-## M5 - אבחון מתקדם והפצה
+## M5 - הפצה
 
-- [ ] אפשרות WPR trace למשתמש מתקדם, בזמן מוגבל ובהסכמה.
-- [ ] מתקין והסרה נקייה.
-- [ ] חתימת קוד, SmartScreen ותהליך עדכון מאומת.
-- [ ] מסלול תמיכה ב-Windows 10/11 לפי גרסאות שנבדקו.
+- [ ] 24-hour soak test.
+- [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
+- [ ] תקציב CPU/RAM עצמי.
+- [ ] Installer, Uninstaller, Signing ו-Update.
+- [ ] פרסום רק עם תוצאות Benchmark משוחזרות.
 
 ## עקרונות קבועים
 
@@ -69,6 +67,6 @@
 2. לא מבצעים ניקוי RAM אגרסיבי.
 3. לא משביתים רכיבי אבטחה/עדכונים/שירותי מערכת.
 4. כל שינוי הפיך ומאושר.
-5. המלצה חייבת להסתמך על מדידה מתמשכת.
+5. Finding חייב להסתמך על מדידה מתמשכת וקורלציה.
 6. התוכנה עצמה חייבת להיות כמעט בלתי מורגשת.
-7. אין הבטחת אחוז האצה בלי בדיקות שחוזרות על עצמן.
+7. אין הבטחת אחוז האצה בלי בדיקות חוזרות.

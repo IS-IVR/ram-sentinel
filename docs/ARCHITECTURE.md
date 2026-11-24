@@ -10,69 +10,55 @@
 
 אוספים מקומיים וקריאה בלבד:
 - Memory: Total / Available / Commit / Commit Limit / System Cache / Kernel pools.
-- CPU: GetSystemTimes, TotalProcessorTime לפי תהליך.
-- Disk: נפח פנוי בכונן המערכת, latency ו-queue באמצעות PDH בקצב נמוך.
+- CPU: GetSystemTimes ו-TotalProcessorTime לפי תהליך.
+- Disk: נפח פנוי, latency ו-queue באמצעות PDH בקצב נמוך.
 - Startup: Run keys, Startup folders ובהמשך Logon Scheduled Tasks.
 - Power: Power mode / AC state כאשר אפשר לקרוא זאת באופן אמין.
 
-ה-Collectors חייבים להיות קלים, עם timeouts וטיפול בכשל. אין סריקות דיסק רקורסיביות או WMI polling תכוף.
+כל Collector מופרד, מחזיר NotAvailable במקרה כשל ואינו מפיל את האפליקציה. אין סריקות דיסק רקורסיביות או WMI polling תכוף.
 
 ### 2. Diagnosis Engine - מנוע אבחון
 
-מקבל חלונות מדידה ומזהה:
-- CPU saturation.
-- Memory pressure ו-Commit pressure.
-- Disk latency / queue.
-- Startup load.
-- Low system-drive free space.
-- מגמת גידול בזיכרון פרטי של תהליך.
+מקבל חלונות מדידה ומזהה CPU saturation, Memory/Paging pressure, Disk latency, Startup load ו-Low Storage. אין להסיק צוואר בקבוק ממדידה בודדת.
 
-אין להסיק צוואר בקבוק ממדידה בודדת. נדרשים משך, סף והקשר למשימה.
+הגדרה מלאה נמצאת ב-[DIAGNOSTICS_ENGINE.md](DIAGNOSTICS_ENGINE.md).
 
-### 3. Recommendation Engine - המלצות
+### 3. Recommendation Engine - מנוע המלצות
 
 כל המלצה כוללת:
-- ראיות/מדדים.
-- סיבת ההמלצה.
-- Confidence.
-- תועלת אפשרית והחיסרון.
+- ראיות/מדדים והמשך הזמן.
+- סיבת ההמלצה ורמת ביטחון.
+- תועלת אפשרית וחיסרון.
 - הרשאות נדרשות.
 - פעולה הפיכה ודרך Restore.
 
+המערכת מציגה Finding ראשי אחד ועד שתי המלצות משניות, לא רשימת אזהרות אינסופית.
+
 ### 4. Action Engine - שינוי מבוקר
 
-לא לבצע שינוי בזמן האבחון. כל שינוי נוצר כ-ActionPlan, מוצג למשתמש וממתין לאישור. לפני שינוי שומרים Backup מקומי. יש Audit log עם תאריך, ערך ישן, ערך חדש ותוצאת פעולה.
+כל שינוי נוצר כ-ActionPlan, מוצג למשתמש וממתין לאישור. לפני שינוי שומרים Backup מקומי. יש Audit log עם תאריך, ערך ישן, ערך חדש ותוצאת פעולה.
 
 ### 5. Verification Engine - מדידה אחרי שינוי
 
 חוזרים על אותה משימה באותם תנאים. מדווחים Median של מספר ריצות ולא תוצאה מיטבית יחידה. אם אין שיפור מעבר לרעש המדידה, אומרים שאין הוכחת שיפור.
 
-## ארכיטקטורה נוכחית בקוד
+## מבנה פרויקטים יעד
 
-### RamSentinel.Core
-- MemorySnapshot
-- MemoryPressureEvaluator
-- CpuUsageCalculator
-- DiskMetricsSnapshot
+- RamSentinel.Core: מודלים, מדדים וחישובים ללא תלות ב-Windows UI.
+- RamSentinel.Windows: Collectors ו-Windows APIs (PDH, Process, Registry, Storage).
+- RamSentinel.Diagnostics: Detectors, correlation, confidence ו-Findings.
+- RamSentinel.Actions: ActionPlan, Backup, Restore ו-Audit.
+- RamSentinel.App.WinUI: UI מודרני, אם יעבור Benchmark.
+- RamSentinel.App.Legacy: היישום הקיים עד להכרעת UI Framework.
+- RamSentinel.Tests: בדיקות יחידה, סימולציות Fixtures ובדיקות אינטגרציה.
 
-### RamSentinel.App
-- WindowsMemoryProvider
-- WindowsCpuUsageProvider
-- WindowsDiskMetricsProvider
-- StartupInventoryProvider (קריאה בלבד)
-- StartupManager
-- MainForm
+אין צורך ב-Windows Service נפרד בשלב הראשון.
 
-### RamSentinel.Core.Tests
-בדיקות ללא Framework חיצוני ללוגיקת לחץ זיכרון ולחישוב CPU.
+## אבחון
 
-## איסוף CPU לפי תהליך
+כל Detector מחזיר Finding מובנה ולא מבצע פעולה. Finding כולל Category, Status, Confidence, Evidence, Duration, Impact, Recommendation, Risk, Reversible ו-RestorePlan.
 
-לכל PID נשמרים Process StartTime, TotalProcessorTime וזמן הדגימה. החישוב:
-
-CPU% = DeltaProcessCpuTime / (DeltaWallTime * LogicalProcessorCount) * 100
-
-הדגימה הראשונה משמשת כ-baseline. תהליכים שיצאו מוסרים מה-cache. האחוז מנורמל לכל קיבולת CPU של המכונה, כך שתהליך המשתמש בליבה לוגית אחת במחשב עם ארבע ליבות לוגיות יציג בערך 25%.
+RAM, CPU, Disk, Startup ו-Storage נבדקים לפי שילוב מדדים לאורך זמן. ראה [DIAGNOSTICS_ENGINE.md](DIAGNOSTICS_ENGINE.md).
 
 ## Startup Inventory
 
@@ -82,38 +68,20 @@ CPU% = DeltaProcessCpuTime / (DeltaWallTime * LogicalProcessorCount) * 100
 - Startup Folder של המשתמש.
 - Startup Folder משותפת.
 
-פקודות Registry מוצגות כמו שנשמרו. זיהוי קובץ היעד הוא הערכה בסיסית בלבד, ולא הוכחה שהפריט נחוץ או בטוח. אין עדיין השבתה מתוך האפליקציה.
-
-בשלב הבא ניתן יהיה להשבית פריטי HKCU בלבד:
-1. שמירת path, value name, kind, raw command ונתוני המקור.
-2. כתיבת Backup לפני שינוי.
-3. אישור משתמש.
-4. השבתה של פריט בודד בלבד.
-5. Restore מדויק, בדיקת התנגשות ויומן פעולה.
-
-פריטי HKLM, Services, Drivers ו-Scheduled Tasks לא יושבתו אוטומטית. Machine-wide changes דורשים תכנון הרשאות ושחזור נפרד.
+רשימת Startup אינה מדידת Startup Impact. יש להציג "לא נמדד" עד שיש נתוני CPU/Disk בזמן Logon. בשלב הבא ניתן להשבית HKCU entry בודד עם גיבוי מדויק ו-Restore. HKLM, Services, Drivers ו-Scheduled Tasks לא ינוהלו אוטומטית.
 
 ## תדירות איסוף
 
-- כשהחלון מוסתר: מדדי מערכת כל 30 שניות.
-- כשהחלון פתוח: מדדי מערכת כל 10 שניות.
-- רשימת תהליכים כל 30 שניות.
-- Startup Inventory נסרק בעת פתיחת הלשונית או רענון ידני.
-- Disk PDH counters ונפח כונן המערכת נקראים כחלק ממדידת המערכת כל 10-30 שניות.
-- מדדי Disk דרך PDH, כשימומשו, ייאספו לכל היותר פעם בשנייה ובדרך כלל כל 5-10 שניות.
-- אין polling מהיר או timers תכופים כשהיישום במגש.
+- Tray: מדדי מערכת כל 30-60 שניות.
+- חלון פתוח: 5-10 שניות לנתונים זולים.
+- תהליכים: 10-30 שניות, לפי מצב.
+- PDH: לעולם לא יותר מפעם בשנייה; בפועל 5-30 שניות לפי מצב.
+- Startup Inventory: רק בעת פתיחת הדף או רענון ידני.
+- Quick Diagnosis: דגימה זמנית קצרה בלבד.
 
-## אבחון דיסק
+## ממשק משתמש
 
-PDH מספק ממשק איסוף מוני ביצועים. המימוש הנוכחי קורא PhysicalDisk(_Total) Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-% Disk Time, וכן בודק את נפח הכונן שבו מותקן Windows באמצעות DriveInfo, בלי לסרוק את תוכנו. יש למדוד Avg. Disk sec/Read, Avg. Disk sec/Write, Current Disk Queue Length ו-Disk Transfers/sec לפי זמינות המונים. אין להתייחס ל-spike רגעי כהוכחה. יש לדרוש עומס ממושך וקשר למשימה. WPR/WPA יהיו מסלול מתקדם לאבחון עמוק ולא רכיב שפועל תמיד.
-
-## פעולות Windows מובנות
-
-- Startup apps: הצגה וניהול מבוקר.
-- Storage Sense: פתיחת הגדרות והצגת המלצות, בלי מחיקת קבצים אוטומטית.
-- Optimize Drives: פתיחת כלי Windows, בלי להפעיל defrag ידני עיוור על כל כונן.
-- Visual Effects: הצעת פתיחת Performance Options.
-- Power mode: הצעת שינוי רק אחרי הסבר על חום, חשמל וסוללה. אין להפעיל Best Performance כברירת מחדל.
+מפרט ה-UX נמצא ב-[UX_DESIGN.md](UX_DESIGN.md). הכיוון המומלץ הוא NavigationView, CommandBar, Breadcrumbs, Details Lists ו-Details Pane בסגנון Explorer. יש למדוד את WinUI 3 מול WinForms לפני מעבר.
 
 ## קווי בטיחות
 
