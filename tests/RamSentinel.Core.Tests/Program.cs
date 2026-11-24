@@ -12,6 +12,8 @@ var checks = new List<(string Name, Action Run)>
     ("System drive free space is calculated safely", TestSystemDriveFreePercent)
 };
 
+checks.AddRange(DiagnosticsEngineChecks.All);
+
 int failures = 0;
 foreach ((string name, Action run) in checks)
 {
