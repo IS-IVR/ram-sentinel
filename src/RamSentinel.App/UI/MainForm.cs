@@ -10,8 +10,14 @@ internal sealed class MainForm : Form
     private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
-    private readonly MemoryPressureEvaluator _pressureEvaluator = new(TimeSpan.FromSeconds(30));
+    private readonly DiagnosticsEngine _diagnosticsEngine = new();
+    private readonly PerformanceSampleHistory _diagnosticHistory = new();
+    private readonly DiagnosticsSummaryView _diagnosticsView = new();
     private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
+    private IReadOnlyList<ProcessPerformanceSample> _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
+    private DateTimeOffset _lastDiagnosticSampleAt = DateTimeOffset.MinValue;
+    private double? _latestCpuPercent;
+    private static readonly TimeSpan DiagnosticSampleInterval = TimeSpan.FromSeconds(30);
     private readonly int _logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 30_000 };
     private readonly NotifyIcon _notifyIcon;
@@ -32,7 +38,6 @@ internal sealed class MainForm : Form
     private readonly CheckBox _startWithWindowsCheckBox = new();
     private readonly Button _closeSelectedButton = new();
     private DateTimeOffset _lastProcessRefresh = DateTimeOffset.MinValue;
-    private MemoryPressureLevel _lastPressureLevel = MemoryPressureLevel.Normal;
     private bool _allowExit;
     private bool _updatingStartupCheckBox;
 
@@ -79,7 +84,6 @@ internal sealed class MainForm : Form
             _updatingStartupCheckBox = true;
             _startWithWindowsCheckBox.Checked = StartupManager.IsEnabled();
             _updatingStartupCheckBox = false;
-            HideToTray();
             RefreshAll();
         };
     }
@@ -99,7 +103,7 @@ internal sealed class MainForm : Form
         _statusLabel.Dock = DockStyle.Top;
         _statusLabel.Height = 27;
         _statusLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
-        _statusLabel.Text = "ממתין לקריאת נתוני זיכרון...";
+        _statusLabel.Text = "ניטור מקומי פעיל. לא מתבצעים שינויים אוטומטיים.";
         _statusLabel.TextAlign = ContentAlignment.MiddleRight;
 
         _explanationLabel.Dock = DockStyle.Top;
@@ -208,7 +212,7 @@ internal sealed class MainForm : Form
         };
         var startupInfo = new Label
         {
-            Text = "רשימה לקריאה בלבד. בשלב הבא תתווסף השבתה עם גיבוי ושחזור.",
+            Text = "הרשימה לקריאה בלבד. השפעת תוכנות ההפעלה עדיין לא נמדדה.",
             AutoSize = true,
             Margin = new Padding(12, 7, 12, 0),
             ForeColor = SystemColors.GrayText
@@ -223,7 +227,11 @@ internal sealed class MainForm : Form
         startupTab.Controls.Add(_startupList);
         startupTab.Controls.Add(startupToolbar);
 
+        var diagnosticsTab = new TabPage("אבחון");
+        diagnosticsTab.Controls.Add(_diagnosticsView);
+
         _mainTabs.Dock = DockStyle.Fill;
+        _mainTabs.TabPages.Add(diagnosticsTab);
         _mainTabs.TabPages.Add(processesTab);
         _mainTabs.TabPages.Add(startupTab);
         _mainTabs.SelectedIndexChanged += (_, _) =>
@@ -264,10 +272,8 @@ internal sealed class MainForm : Form
     private void RefreshAll()
     {
         RefreshSnapshot();
-        RefreshProcessList();
-        _lastProcessRefresh = DateTimeOffset.Now;
 
-        if (_mainTabs.SelectedIndex == 1)
+        if (_mainTabs.SelectedTab?.Text == "תוכנות הפעלה")
         {
             RefreshStartupList();
         }
