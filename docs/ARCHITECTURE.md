@@ -19,6 +19,7 @@ RAM Sentinel נועדה לשמור על תגובתיות המחשב בזמן ע�
 אפליקציית Windows Forms:
 - `WindowsMemoryProvider`: קריאה ל-`GlobalMemoryStatusEx` ול-`GetPerformanceInfo`.
 - `MainForm`: חלון בעברית, RTL, רשימת תהליכים, התראות ואזור התראות.
+- `WindowsCpuUsageProvider`: מדידת CPU מערכתית באמצעות הפרשי `GetSystemTimes`.
 - `StartupManager`: הפעלה אוטומטית אופציונלית למשתמש הנוכחי דרך מפתח Run ב-`HKCU` בלבד.
 
 ### RamSentinel.Core.Tests
@@ -69,6 +70,10 @@ RAM Sentinel נועדה לשמור על תגובתיות המחשב בזמן ע�
 5. אין פעולה שמשנה את המחשב ללא הסכמה מפורשת.
 6. אין צורך בהרשאות מנהל.
 7. הניטור מקומי בלבד.
+
+## מדידת CPU
+
+`GetSystemTimes` מחזירה זמני Idle, Kernel ו-User מצטברים מאז אתחול המערכת. RAM Sentinel שומרת דגימה קודמת ומחשבת שימוש CPU לפי ההפרשים בין הדגימות. הדגימה הראשונה משמשת כבסיס ואינה מציגה אחוז. המדד הוא שימוש CPU של כל המערכת, ואינו עדיין מדד CPU לכל תהליך.
 
 ## מחזור ניטור וביצועים
 
