@@ -24,7 +24,7 @@ public sealed record ProcessInventoryProcessingResult(
 
 /// <summary>
 /// Applies one immutable process sample to CPU history and lifecycle tracking.
-/// This class has no Windows or UI dependency, so the full consumer orchestration
+/// This class has no Windows or UI dependency, so the consumer orchestration
 /// can be tested deterministically in the Core test project.
 /// </summary>
 public sealed class ProcessInventorySampleProcessor
@@ -69,45 +69,40 @@ public sealed class ProcessInventorySampleProcessor
                 RelationshipPauseReason: "הדגימה כפולה או ישנה יותר מהדגימה האחרונה; לא עודכנו נתוני תהליכים.");
         }
 
-        bool relationshipsAdvanced = false;
         IReadOnlyList<ProcessInventoryEntry> entries =
             inventory.Entries ?? Array.Empty<ProcessInventoryEntry>();
+        bool relationshipsAdvanced = inventory.CanAdvanceRelationships;
 
-        if (isNewerSample)
+        if (relationshipsAdvanced)
         {
-            relationshipsAdvanced = inventory.CanAdvanceRelationships;
-            if (relationshipsAdvanced)
-            {
-                ProcessLifecycleObservation[] lifecycleObservations = entries
-                    .Select(entry => new ProcessLifecycleObservation(
-                        Identity: entry.Identity!,
-                        Name: entry.Name,
-                        ParentProcessId: entry.ParentProcessId,
-                        CapturedAt: inventory.CapturedAt,
-                        WorkingSetBytes: entry.WorkingSetBytes,
-                        PrivateBytes: entry.PrivateBytes,
-                        TotalCpuTime: entry.TotalCpuTime,
-                        ReadOperationCount: entry.ReadOperationCount,
-                        WriteOperationCount: entry.WriteOperationCount,
-                        ReadTransferBytes: entry.ReadTransferBytes,
-                        WriteTransferBytes: entry.WriteTransferBytes))
-                    .ToArray();
+            ProcessLifecycleObservation[] lifecycleObservations = entries
+                .Select(entry => new ProcessLifecycleObservation(
+                    Identity: entry.Identity!,
+                    Name: entry.Name,
+                    ParentProcessId: entry.ParentProcessId,
+                    CapturedAt: inventory.CapturedAt,
+                    WorkingSetBytes: entry.WorkingSetBytes,
+                    PrivateBytes: entry.PrivateBytes,
+                    TotalCpuTime: entry.TotalCpuTime,
+                    ReadOperationCount: entry.ReadOperationCount,
+                    WriteOperationCount: entry.WriteOperationCount,
+                    ReadTransferBytes: entry.ReadTransferBytes,
+                    WriteTransferBytes: entry.WriteTransferBytes))
+                .ToArray();
 
-                _relationshipTracker.Observe(inventory.CapturedAt, lifecycleObservations);
-            }
-            else
-            {
-                // Never retain stale relationship confidence after an incomplete inventory.
-                _relationshipTracker.Clear();
-            }
-
-            _lastProcessedAt = inventory.CapturedAt;
+            _relationshipTracker.Observe(inventory.CapturedAt, lifecycleObservations);
+        }
+        else
+        {
+            // Never retain stale relationship confidence after an incomplete inventory.
+            _relationshipTracker.Clear();
         }
 
+        _lastProcessedAt = inventory.CapturedAt;
         var rows = new List<ProcessInventoryRow>();
         var activeIdentities = new HashSet<ProcessIdentity>();
 
-        foreach (ProcessInventoryEntry entry in entries
+        foreach (ProcessInventoryEntry entry in entries)
         {
             if (entry is null || entry.ProcessId <= 0)
             {
@@ -118,7 +113,7 @@ public sealed class ProcessInventorySampleProcessor
             DateTime? startedAtUtc = identity?.StartedAtUtc.UtcDateTime;
             double? cpuPercent = null;
 
-            if (isNewerSample && identity is not null)
+            if (identity is not null)
             {
                 activeIdentities.Add(identity);
 
@@ -152,15 +147,12 @@ public sealed class ProcessInventorySampleProcessor
                 StartTimeUtc: startedAtUtc));
         }
 
-        if (isNewerSample)
+        // Remove exited and PID-reused identities to keep the history bounded.
+        foreach (ProcessIdentity identity in _cpuSamples.Keys
+                     .Where(identity => !activeIdentities.Contains(identity))
+                     .ToArray())
         {
-            // Remove exited and PID-reused identities to keep the history bounded.
-            foreach (ProcessIdentity identity in _cpuSamples.Keys
-                         .Where(identity => !activeIdentities.Contains(identity))
-                         .ToArray())
-            {
-                _cpuSamples.Remove(identity);
-            }
+            _cpuSamples.Remove(identity);
         }
 
         ProcessPerformanceSample[] performanceSamples = rows
@@ -177,9 +169,7 @@ public sealed class ProcessInventorySampleProcessor
             Inventory: inventory,
             Rows: rows.ToArray(),
             PerformanceSamples: performanceSamples,
-            Relationships: isNewerSample
-                ? _relationshipTracker.GetCurrentRelationships()
-                : Array.Empty<ProcessRelationship>(),
+            Relationships: _relationshipTracker.GetCurrentRelationships(),
             RelationshipsAdvanced: relationshipsAdvanced,
             RelationshipPauseReason: relationshipsAdvanced
                 ? null
