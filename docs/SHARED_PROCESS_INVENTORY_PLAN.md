@@ -17,6 +17,7 @@ Implemented on `feature/shared-process-inventory`:
 - CPU history is keyed by `ProcessIdentity` (PID + start time), rather than PID alone.
 - Relationship tracking is currently gated by an all-processes-have-observations count check.
 - The existing diagnostic cadence and explicit user-confirmed normal-close flow remain unchanged.
+- CI workflow trigger was widened in commit `ee7a0223810162e92da6d23babab956be0ed8859` so stacked pull requests targeting feature branches are validated. GitHub Actions run 45 is the first run using this trigger; its result is pending at this checkpoint.
 
 This is not yet a correct shared-observation implementation: `MainForm` currently reads `Process.StartTime` and `TotalProcessorTime` again after the provider has already read them. It also reads process name and memory values independently. The duplicated identity read creates a race and violates the single immutable observation rule. The current count-based completeness check can also starve tracking on systems where even one process is inaccessible.
 
@@ -101,13 +102,14 @@ Tests should use injected interfaces/delegates for process enumeration, process-
 
 - [x] Refactor provider to consume caller-owned process instances and a required timestamp.
 - [x] Introduce one app-level process snapshot owner for the diagnostic sample.
+- [x] Enable CI workflow triggers for stacked pull requests targeting feature branches.
 - [ ] Make the provider's immutable per-process observations the sole source for identity and CPU history.
 - [ ] Make process rows consume the same observations without a second identity/CPU read.
 - [ ] Return explicit process-enumeration and Toolhelp metadata completeness states.
 - [ ] Add injectable enumeration/capture/disposal seams.
 - [ ] Add deterministic tests for identity, partial snapshots, Toolhelp failures, and disposal.
 - [ ] Verify UI-only refresh does not enumerate processes.
-- [ ] Run Windows CI and inspect the resulting PR diff.
+- [ ] Confirm GitHub Actions run 45 passes, then run CI on all subsequent implementation commits.
 - [ ] Perform a low-resource Windows runtime soak test before enabling any lifecycle interpretation.
 
 ## Acceptance
