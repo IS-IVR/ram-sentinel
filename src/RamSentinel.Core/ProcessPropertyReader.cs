@@ -52,7 +52,7 @@ public sealed class ProcessPropertyReader
     {
         ArgumentNullException.ThrowIfNull(process);
 
-        int? processId = TryRead(() => _access.ReadProcessId(process));
+        int? processId = TryReadValue(() => _access.ReadProcessId(process));
         if (!processId.HasValue)
         {
             return new ProcessPropertyObservation(
@@ -64,11 +64,11 @@ public sealed class ProcessPropertyReader
                 TotalCpuTime: null);
         }
 
-        DateTimeOffset? startedAtUtc = TryRead(() => _access.ReadStartedAtUtc(process));
-        string? name = TryRead(() => _access.ReadProcessName(process));
-        long? workingSet = TryRead(() => _access.ReadWorkingSetBytes(process));
-        long? privateBytes = TryRead(() => _access.ReadPrivateBytes(process));
-        TimeSpan? totalCpuTime = TryRead(() => _access.ReadTotalCpuTime(process));
+        DateTimeOffset? startedAtUtc = TryReadValue(() => _access.ReadStartedAtUtc(process));
+        string? name = TryReadReference(() => _access.ReadProcessName(process));
+        long? workingSet = TryReadValue(() => _access.ReadWorkingSetBytes(process));
+        long? privateBytes = TryReadValue(() => _access.ReadPrivateBytes(process));
+        TimeSpan? totalCpuTime = TryReadValue(() => _access.ReadTotalCpuTime(process));
 
         return new ProcessPropertyObservation(
             ProcessId: processId,
@@ -79,7 +79,8 @@ public sealed class ProcessPropertyReader
             TotalCpuTime: totalCpuTime);
     }
 
-    private static T? TryRead<T>(Func<T> read)
+    private static T? TryReadValue<T>(Func<T> read)
+        where T : struct
     {
         try
         {
@@ -92,7 +93,25 @@ public sealed class ProcessPropertyReader
                 or UnauthorizedAccessException
                 or ArgumentException)
         {
-            return default;
+            return null;
+        }
+    }
+
+    private static T? TryReadReference<T>(Func<T> read)
+        where T : class
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or Win32Exception
+                or NotSupportedException
+                or UnauthorizedAccessException
+                or ArgumentException)
+        {
+            return null;
         }
     }
 

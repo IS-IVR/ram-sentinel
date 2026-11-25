@@ -58,7 +58,7 @@ public static class ProcessParentSnapshotCapture
         {
             created = create();
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             return Failure(
                 parentIds,
@@ -136,7 +136,7 @@ public static class ProcessParentSnapshotCapture
                 }
             }
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             status = parentIds.Count == 0
                 ? ParentMetadataStatus.Unavailable
@@ -162,7 +162,7 @@ public static class ProcessParentSnapshotCapture
                         $"לא ניתן לשחרר את צילום התהליכים (שגיאה {closed.ErrorCode}).");
                 }
             }
-            catch (Exception exception)
+            catch (Exception)
             {
                 if (status == ParentMetadataStatus.Complete)
                 {
