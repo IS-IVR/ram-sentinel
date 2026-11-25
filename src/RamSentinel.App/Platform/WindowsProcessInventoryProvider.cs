@@ -24,8 +24,8 @@ internal sealed class WindowsProcessInventoryProvider
         foreach (Process process in processes)
         {
             try
-                {
-                    int processId = process.Id;
+            {
+                int processId = process.Id;
                     if (processId <= 0)
                     {
                         continue;
@@ -62,9 +62,9 @@ internal sealed class WindowsProcessInventoryProvider
                         ReadTransferBytes: io?.ReadTransferCount,
                         WriteTransferBytes: io?.WriteTransferCount));
                 }
-                catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
-                {
-                    // Processes can exit or become inaccessible during an inventory pass.
+            catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
+            {
+                // Processes can exit or become inaccessible during an inventory pass.
             }
         }
 
