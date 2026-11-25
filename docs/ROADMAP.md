@@ -73,6 +73,16 @@
 - [ ] חיבור האיסוף למחזור הדגימה הקיים, ללא לולאת סריקה נוספת.
 - [ ] בדיקות אינטגרציה על Windows ובדיקת עומס ממושכת.
 
+### סטטוס אינטגרציה נוכחי (25.11.2026)
+
+- [ ] PR #6: Windows Process Inventory Provider לקריאה בלבד.
+- [ ] PR #8: שיתוף snapshot יחיד בין טבלת התהליכים, היסטוריית CPU ומעקב מחזור החיים.
+- [ ] Issue #9: שימוש חוזר באותה זהות תהליך, תוצאת completeness מפורשת, טיפול בכשל Toolhelp ובדיקות disposal/one-enumeration.
+- [ ] בדיקת Windows CI ובדיקת runtime על מחשב חלש לפני מיזוג.
+- [ ] אין להציג המלצות Lifecycle ואין להפעיל פעולות תהליך עד לסגירת תנאי הקבלה של שלב 1.
+
+קישורים: [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6) · [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8) · [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7) · [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9)
+
 ### Phase 2 - סיווג והצעות
 - [ ] Application sessions ו-Activity Classifier המבוססים על כמה דגימות.
 - [ ] שימוש בממצא לחץ הזיכרון הקיים בלבד, ללא סף RAM חלופי.
