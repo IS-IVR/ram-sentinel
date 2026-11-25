@@ -34,7 +34,7 @@ The packaging script checks that the published executable and Inno Setup compile
 
 The Build and Test workflow builds and tests the application on normal CI runs. It also compiles the installer and Portable ZIP so packaging errors are caught before a release is tagged.
 
-A GitHub Release is created only for a pushed tag matching `v*`. The release job waits for the build/package job, verifies that the tag already exists, and uploads the installer, Portable ZIP, and checksum file with generated release notes. The workflow does not create tags.
+A GitHub Release is created only for a pushed tag matching `v*`. The release job waits for the build/package job, checks out the tagged commit, and verifies that it is reachable from `main` before uploading the installer, Portable ZIP, and checksum file with generated release notes. A tag that points only to an unmerged feature branch is rejected. The workflow does not create tags.
 
 Do not create a public version tag until the project’s manual Windows validation and low-resource soak requirements are satisfied. In particular, PR #8 remains dependent on the Windows UI check and 30-minute soak documented in Issue #9.
 
