@@ -38,12 +38,28 @@ jobs:
       - name: Run Windows process inventory integration checks
         run: dotnet run --project .\\tests\\RamSentinel.App.Tests\\RamSentinel.App.Tests.csproj --configuration Release --no-build
 
+      - name: Run inventory soak harness smoke check
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'ram-sentinel-soak-smoke.csv'
+          dotnet run --project .\\tools\\RamSentinel.InventorySoak\\RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
+
       - name: Publish standalone x64 app
         run: dotnet publish .\\src\\RamSentinel.App\\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\\artifacts\\win-x64
+
+      - name: Publish standalone x64 inventory soak tool
+        run: dotnet publish .\\tools\\RamSentinel.InventorySoak\\RamSentinel.InventorySoak.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\\artifacts\\inventory-soak-win-x64
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ram-sentinel-win-x64
           path: .\\artifacts\\win-x64\\
+          if-no-files-found: error
+
+      - name: Upload inventory soak tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-sentinel-inventory-soak-win-x64
+          path: .\\artifacts\\inventory-soak-win-x64\\
           if-no-files-found: error

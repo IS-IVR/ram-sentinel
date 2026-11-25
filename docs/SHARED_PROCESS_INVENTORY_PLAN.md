@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, and UI-neutral process-sample orchestration implemented. Windows CI run #71 passed for commit `eeda7f5e5579c65ef963fee7370624b3247d74ae` (62/62 Core checks). A real low-resource Windows soak remains open.
+Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, UI-neutral process-sample orchestration, and a standalone low-resource soak harness implemented. Windows CI run #72 passed for the previous documentation head. Real soak execution on a weak target machine remains open.
 
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8).
 
@@ -26,6 +26,7 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - Incomplete inventories clear relationship confidence instead of retaining stale evidence.
 - Process enumeration remains inside the existing 30-second diagnostic sample. The UI-only refresh does not perform another process enumeration.
 - No new timer, process-control capability, or lifecycle recommendation has been introduced.
+- A standalone `RamSentinel.InventorySoak` tool measures collector overhead and completeness using aggregate-only CSV fields; no process identity or user content is stored.
 
 ## Automated validation
 
@@ -46,8 +47,8 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 
 - [x] Extract and test the Core orchestration that MainForm uses: one inventory object and timestamp produce the process-list rows, diagnostic samples, and relationship evidence.
 - [ ] Run the desktop UI on Windows and verify the process list and pause explanation reflect complete, incomplete, and stale samples correctly.
-- [ ] Run a long-duration soak test on a real low-memory Windows machine with a large process count. Record collector CPU, working-set/memory overhead, and sample elapsed time.
-- [ ] Check whether strict Toolhelp completeness causes relationship tracking to pause too often on supported Windows versions and under process churn.
+- [ ] Run `RamSentinel.InventorySoak.exe` for 30 minutes on a real low-memory Windows machine. Review collector CPU, working-set/private-memory overhead, sample elapsed time, and process-count stability. Full instructions: [LOW_RESOURCE_SOAK_TEST.md](LOW_RESOURCE_SOAK_TEST.md).
+- [ ] Use the soak CSV to check whether strict Toolhelp completeness causes relationship tracking to pause too often on supported Windows versions and under process churn.
 - [ ] Review the final stacked PR diff and retarget only after the base provider PR is ready.
 - [ ] Keep lifecycle recommendations and automated process actions disabled until the runtime soak and orchestration validation are complete.
 
@@ -61,4 +62,4 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 
 ## Acceptance
 
-Do not merge PR #8 until the desktop UI validation, low-resource Windows runtime soak, and strict-completeness review are complete. The passing CI tests validate the Core orchestration and collector smoke-test paths; they do not substitute for long-duration validation on a weak target machine.
+Do not merge PR #8 until the desktop UI validation, the low-resource Windows soak using the new harness, and strict-completeness review are complete. The passing CI tests validate the Core orchestration and collector smoke-test paths; they do not substitute for long-duration validation on a weak target machine.
