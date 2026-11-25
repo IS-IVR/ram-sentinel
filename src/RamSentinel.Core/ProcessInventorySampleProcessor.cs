@@ -20,7 +20,14 @@ public sealed record ProcessInventoryProcessingResult(
     IReadOnlyList<ProcessPerformanceSample> PerformanceSamples,
     IReadOnlyList<ProcessRelationship> Relationships,
     bool RelationshipsAdvanced,
-    string? RelationshipPauseReason);
+    string? RelationshipPauseReason)
+{
+    /// <summary>
+    /// False when the supplied snapshot was duplicate or older than the last accepted
+    /// sample. Consumers must preserve their currently displayed/retained data.
+    /// </summary>
+    public bool IsAccepted { get; init; } = true;
+}
 
 /// <summary>
 /// Applies one immutable process sample to CPU history and lifecycle tracking.
@@ -66,7 +73,10 @@ public sealed class ProcessInventorySampleProcessor
                 PerformanceSamples: Array.Empty<ProcessPerformanceSample>(),
                 Relationships: Array.Empty<ProcessRelationship>(),
                 RelationshipsAdvanced: false,
-                RelationshipPauseReason: "הדגימה כפולה או ישנה יותר מהדגימה האחרונה; לא עודכנו נתוני תהליכים.");
+                RelationshipPauseReason: "הדגימה כפולה או ישנה יותר מהדגימה האחרונה; לא עודכנו נתוני תהליכים.")
+            {
+                IsAccepted = false
+            };
         }
 
         IReadOnlyList<ProcessInventoryEntry> entries =
