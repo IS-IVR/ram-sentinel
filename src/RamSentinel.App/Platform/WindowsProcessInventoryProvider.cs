@@ -43,7 +43,13 @@ internal sealed class WindowsProcessInventoryProvider
                 continue;
             }
 
-            if (processId <= 0)
+            if (processId == 0)
+            {
+                // PID 0 is the Windows System Idle pseudo-process, not an ordinary process row.
+                continue;
+            }
+
+            if (processId < 0)
             {
                 enumerationStatus = ProcessEnumerationStatus.Failed;
                 failureReasons.Add("נמצא מזהה תהליך לא תקין במהלך הדגימה.");

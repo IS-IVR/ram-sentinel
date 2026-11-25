@@ -239,7 +239,7 @@ internal static class LifecycleEngineChecks
 
         try
         {
-            _ = OwnedSnapshotCapture.Execute(
+            _ = OwnedSnapshotCapture.Execute<int, int>(
                 enumerate: () =>
                 {
                     enumerationCalls++;
