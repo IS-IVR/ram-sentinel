@@ -363,7 +363,7 @@ internal sealed class MainForm : Form
                 {
                     try
                     {
-                        _lastProcessSamples = RefreshProcessList();
+                        _lastProcessSamples = RefreshProcessList(now);
                     }
                     catch (Exception ex) when (
                         ex is InvalidOperationException or
@@ -429,9 +429,9 @@ internal sealed class MainForm : Form
         }
     }
 
-    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList()
+    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList(DateTimeOffset sampledAt)
     {
-        DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
+        sampledAt = sampledAt.ToUniversalTime();
         ProcessInventorySnapshot inventory;
 
         try
