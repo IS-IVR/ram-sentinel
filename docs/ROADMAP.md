@@ -58,8 +58,8 @@
 - [ ] 24-hour soak test.
 - [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
 - [ ] תקציב CPU/RAM עצמי.
-- [x] בניית מתקין x64 למשתמש הנוכחי, הסרה רגילה וגרסת Portable.
-- [x] GitHub Release אוטומטי רק בעקבות תגית גרסה, כולל SHA-256 ומונה הורדות של נכסי Release. טרם פורסמה גרסה רשמית.
+- [ ] מתקין x64 למשתמש הנוכחי, Uninstaller וגרסת Portable (מימוש ב-PR #11; ממתין לבדיקת Windows CI).
+- [ ] GitHub Release מתגית גרסה, SHA-256 ומונה הורדות של נכסי Release (מימוש ב-PR #11; טרם פורסמה גרסה).
 - [ ] חתימת קוד Authenticode ומנגנון עדכון.
 
 ## M6 - Smart Application Lifecycle Manager
