@@ -72,7 +72,9 @@
 - [x] חיבור ה-Provider לרענון התהליכים הקיים ול-ProcessRelationshipTracker באמצעות תצפית בלתי-משתנה וללא סריקה כפולה.
 - [ ] בדיקת Windows ממושכת במחשב חלש ואימות עלות האיסוף לפני הצגת המלצות Lifecycle.
 - [ ] Foreground-window event tracking ללא איסוף כותרות חלונות או קלט משתמש.
-- [ ] בדיקות אינטגרציה על Windows ובדיקת עומס ממושכת.
+- [x] בדיקת אינטגרציה אוטומטית ב-Windows CI ל-Provider, למאפייני התהליך ולצילום Toolhelp מול התהליך הנוכחי.
+- [ ] בדיקת orchestration מלאה של MainForm, היסטוריית CPU ומעקב Lifecycle על אותה תצפית.
+- [ ] בדיקת עומס ממושכת במחשב Windows חלש, כולל מדידת CPU/RAM/זמן איסוף ובדיקת starvation של דגימות לא שלמות.
 
 ### Phase 2 - סיווג והצעות
 - [ ] Application sessions ו-Activity Classifier המבוססים על כמה דגימות.

@@ -36,6 +36,10 @@ The provider does not read executable paths, command-line arguments, window capt
 - No Windows settings, registry entries, services, or files are changed.
 - The collector is intended to run at the existing 30-second diagnostic interval, not on every UI refresh.
 
+## Windows integration validation
+
+The Windows-only test project exercises the concrete provider against the current process on a Windows runner. It verifies a complete Toolhelp snapshot, the current PID and process identity, readable process name/memory/CPU properties, parent metadata presence, and exact sample timestamp reuse. This is a provider smoke test, not a long-duration performance benchmark or a test of the full MainForm orchestration.
+
 ## Remaining integration work
 
-The provider is connected to the existing process-list refresh through one owned snapshot. The same immutable entries and capture timestamp feed process rows, CPU history, and lifecycle observations. An incomplete inventory is displayed best-effort but cannot advance relationship confidence. Windows CI and a low-resource-machine soak test are still required before enabling lifecycle recommendations.
+The provider is connected to the existing process-list refresh through one owned snapshot. The same immutable entries and capture timestamp feed process rows, CPU history, and lifecycle observations. An incomplete inventory is displayed best-effort but cannot advance relationship confidence. A Windows CI smoke test now executes the concrete provider, System.Diagnostics.Process property adapter, and Toolhelp P/Invoke path against the current process. A full MainForm/consumer-orchestration test and a low-resource-machine soak test are still required before enabling lifecycle recommendations.
