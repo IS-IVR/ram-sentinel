@@ -1,5 +1,7 @@
 # RAM Sentinel
 
+[![GitHub Downloads](https://img.shields.io/github/downloads/IS-IVR/ram-sentinel/total?label=downloads)](https://github.com/IS-IVR/ram-sentinel/releases)
+
 תוכנת Windows קלה לאבחון גורמים שמאטים את המחשב, ולהמלצה על שיפורים בטוחים והפיכים.
 
 ## עקרון המוצר
@@ -16,6 +18,14 @@
 - רשימת תהליכים המשלבת CPU ו-RAM.
 - בקשת סגירה רגילה של אפליקציית משתמש לאחר אישור.
 - ניטור חסכוני באזור ההתראות.
+
+## הורדה והתקנה
+
+ההפצות הרשמיות יופיעו בעמוד [GitHub Releases](https://github.com/IS-IVR/ram-sentinel/releases) לאחר יצירת גרסה רשמית. ההפצה מתוכננת לכלול מתקין למשתמש הנוכחי, גרסה ניידת (Portable) וקובץ בדיקת SHA-256.
+
+מונה ההורדות בראש המסמך מבוסס על הורדות של קובצי Release בלבד. הוא אינו מונה משתמשים ייחודיים, התקנות פעילות, שיבוטים (clones) או הורדות זמניות של GitHub Actions. כרגע עדיין לא פורסמה גרסה רשמית.
+
+מפרט ההתקנה והפרסום: [docs/RELEASES_AND_INSTALLER.md](docs/RELEASES_AND_INSTALLER.md).
 
 ## התכנון החדש
 
