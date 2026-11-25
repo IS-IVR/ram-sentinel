@@ -35,6 +35,9 @@ jobs:
       - name: Run memory pressure logic checks
         run: dotnet run --project .\\tests\\RamSentinel.Core.Tests\\RamSentinel.Core.Tests.csproj --configuration Release --no-build
 
+      - name: Run Windows process inventory integration checks
+        run: dotnet run --project .\\tests\\RamSentinel.App.Tests\\RamSentinel.App.Tests.csproj --configuration Release --no-build
+
       - name: Publish standalone x64 app
         run: dotnet publish .\\src\\RamSentinel.App\\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\\artifacts\\win-x64
 
