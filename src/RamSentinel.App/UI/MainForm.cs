@@ -456,6 +456,12 @@ internal sealed class MainForm : Form
         }
 
         ProcessInventoryProcessingResult processed = _processSampleProcessor.Process(inventory);
+        if (!processed.IsAccepted)
+        {
+            // A duplicate or out-of-order sample must not clear the last valid UI rows or diagnostics.
+            return _lastProcessSamples;
+        }
+
         if (processed.RelationshipsAdvanced)
         {
             _explanationLabel.Text = "האבחון קורא מדדים בלבד. לא מתבצעים שינויים אוטומטיים במחשב.";
