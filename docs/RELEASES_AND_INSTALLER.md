@@ -36,7 +36,7 @@ The Build and Test workflow builds and tests the application on pushes and pull 
 
 For a version tag, the Windows job compiles the installer, creates the Portable ZIP, generates SHA-256 checksums, then performs a silent per-user install/uninstall smoke test. The smoke test verifies that the installed executable is byte-for-byte identical to the published executable and that the per-user uninstall registration is created and removed. The release job checks out the tagged commit and verifies that it is reachable from `main` before uploading the three assets with generated release notes. A tag that points only to an unmerged feature branch is rejected. The workflow does not create tags.
 
-Do not create a public version tag until the project’s manual Windows validation and low-resource soak requirements are satisfied. In particular, PR #8 remains dependent on the Windows UI check and 30-minute soak documented in Issue #9.
+Do not create a public version tag until the project’s manual Windows validation and low-resource soak requirements are satisfied. In particular, PR #8 remains dependent on the Windows UI check and 30-minute soak documented in Issue #9. The step-by-step checklist is maintained in [docs/WINDOWS_MANUAL_VALIDATION.md](WINDOWS_MANUAL_VALIDATION.md).
 
 ## Download counts
 
