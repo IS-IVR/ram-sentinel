@@ -114,9 +114,22 @@ jobs:
     needs: build
     runs-on: windows-latest
     permissions:
-      actions: read
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require release commit to be reachable from main
+        shell: pwsh
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Refusing to publish: the tagged commit is not reachable from main."
+          }
+
       - name: Download release assets
         uses: actions/download-artifact@v4
         with:
