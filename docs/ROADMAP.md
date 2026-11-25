@@ -58,9 +58,10 @@
 - [ ] 24-hour soak test.
 - [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
 - [ ] תקציב CPU/RAM עצמי.
-- [ ] מתקין x64 למשתמש הנוכחי, Uninstaller וגרסת Portable (מימוש ב-PR #11; ממתין לבדיקת Windows CI).
-- [ ] GitHub Release מתגית גרסה, SHA-256 ומונה הורדות של נכסי Release (מימוש ב-PR #11; טרם פורסמה גרסה).
+- [ ] מתקין x64 למשתמש הנוכחי, Uninstaller וגרסת Portable (מימוש מתועד ב-Issue #10; ממתין לאימות Windows CI).
+- [ ] GitHub Release מתגית גרסה, SHA-256 ומונה הורדות של נכסי Release (מימוש מתועד ב-Issue #10; טרם פורסמה גרסה).
 - [ ] חתימת קוד Authenticode ומנגנון עדכון.
+
 
 ## M6 - Smart Application Lifecycle Manager
 
