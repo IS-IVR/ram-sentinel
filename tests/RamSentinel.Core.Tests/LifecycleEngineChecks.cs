@@ -13,7 +13,10 @@ internal static class LifecycleEngineChecks
         ("Incomplete process enumeration blocks relationship tracking", TestIncompleteEnumeration),
         ("Partial parent metadata blocks relationship tracking", TestPartialParentMetadata),
         ("A process without verified identity blocks relationship tracking", TestMissingIdentity),
-        ("A complete empty inventory is distinguishable from failure", TestCompleteEmptyInventory)
+        ("A valid empty inventory is distinguishable from failure", TestCompleteEmptyInventory),
+        ("An identity with a different PID blocks relationship tracking", TestIdentityPidMismatch),
+        ("An entry captured at a different time blocks relationship tracking", TestCapturedAtMismatch),
+        ("Unavailable parent metadata on an entry blocks relationship tracking", TestEntryParentMetadataUnavailable)
     ];
 
     private static void TestRepeatedObservation()
@@ -104,7 +107,6 @@ internal static class LifecycleEngineChecks
             "A long gap must reset the relationship instead of implying continuous observation.");
     }
 
-
     private static void TestIncompleteEnumeration()
     {
         DateTimeOffset at = DateTimeOffset.UtcNow;
@@ -158,6 +160,48 @@ internal static class LifecycleEngineChecks
         Assert(snapshot.CanAdvanceRelationships,
             "A valid empty inventory is complete and must be distinguishable from enumeration failure.");
     }
+
+    private static void TestIdentityPidMismatch()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var entry = InventoryEntry(at) with
+        {
+            Identity = new ProcessIdentity(101, at.AddMinutes(-1))
+        };
+        var snapshot = CompleteSnapshot(at, entry);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "An identity belonging to another PID must never be accepted for this process row.");
+    }
+
+    private static void TestCapturedAtMismatch()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var entry = InventoryEntry(at) with { CapturedAt = at.AddMilliseconds(1) };
+        var snapshot = CompleteSnapshot(at, entry);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "Every entry must use the exact timestamp assigned to its inventory snapshot.");
+    }
+
+    private static void TestEntryParentMetadataUnavailable()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var entry = InventoryEntry(at) with { ParentMetadataAvailable = false };
+        var snapshot = CompleteSnapshot(at, entry);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A snapshot cannot advance relationships when any entry lacks trustworthy parent metadata.");
+    }
+
+    private static ProcessInventorySnapshot CompleteSnapshot(
+        DateTimeOffset at,
+        ProcessInventoryEntry entry) =>
+        new(
+            at,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Complete,
+            [entry]);
 
     private static ProcessInventoryEntry InventoryEntry(DateTimeOffset at) =>
         new(
