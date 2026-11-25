@@ -19,7 +19,7 @@ Implemented on `feature/shared-process-inventory`:
 - The existing diagnostic cadence and explicit user-confirmed normal-close flow remain unchanged.
 - CI workflow trigger was widened in commit `ee7a0223810162e92da6d23babab956be0ed8859` so stacked pull requests targeting feature branches are validated. Run 45 was cancelled when a newer commit superseded it; run 46 for head `7771d68ed53f0eed5fa61e18b6da93bad1f5e37c` completed successfully. This confirms the current compile/Core test workflow, not the unimplemented deterministic Windows-provider failure-path tests or runtime behavior.
 
-This is not yet a correct shared-observation implementation: `MainForm` currently reads `Process.StartTime` and `TotalProcessorTime` again after the provider has already read them. It also reads process name and memory values independently. The duplicated identity read creates a race and violates the single immutable observation rule. The current count-based completeness check can also starve tracking on systems where even one process is inaccessible.
+This is not yet a correct shared-observation implementation: `MainForm` currently reads `Process.StartTime` and `TotalProcessorTime` again after the provider has already read them. It also reads process name and memory values independently. The duplicated identity read creates a race and violates the single immutable observation rule. The UI still uses the old count-based completeness check. A new Core-level `ProcessInventorySnapshot` contract now defines explicit enumeration status, parent-metadata status, per-entry identity/metadata availability, and the single `CanAdvanceRelationships` gate. It is covered by deterministic Core checks but is not yet wired into the Windows provider or UI.
 
 ## Required architecture
 
@@ -103,9 +103,12 @@ Tests should use injected interfaces/delegates for process enumeration, process-
 - [x] Refactor provider to consume caller-owned process instances and a required timestamp.
 - [x] Introduce one app-level process snapshot owner for the diagnostic sample.
 - [x] Enable CI workflow triggers for stacked pull requests targeting feature branches.
+- [x] Add the Core inventory result contract with explicit enumeration/parent-metadata completeness and a single relationship-advancement gate.
+- [x] Add deterministic Core checks for failed enumeration, partial parent metadata, missing identity, and a valid empty inventory.
+- [ ] Wire the Windows provider to produce the new immutable inventory result and preserve unreadable processes as rows with unavailable metrics.
 - [ ] Make the provider's immutable per-process observations the sole source for identity and CPU history.
 - [ ] Make process rows consume the same observations without a second identity/CPU read.
-- [ ] Return explicit process-enumeration and Toolhelp metadata completeness states.
+- [ ] Return explicit process-enumeration and Toolhelp metadata completeness states, including terminal Win32 error handling.
 - [ ] Add injectable enumeration/capture/disposal seams.
 - [ ] Add deterministic tests for identity, partial snapshots, Toolhelp failures, and disposal.
 - [ ] Verify UI-only refresh does not enumerate processes.
