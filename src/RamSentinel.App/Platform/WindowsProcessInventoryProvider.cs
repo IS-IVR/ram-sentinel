@@ -12,17 +12,18 @@ namespace RamSentinel.App.Platform;
 /// </summary>
 internal sealed class WindowsProcessInventoryProvider
 {
-    public IReadOnlyList<ProcessLifecycleObservation> ReadAll(DateTimeOffset? capturedAt = null)
+    public IReadOnlyList<ProcessLifecycleObservation> ReadAll(
+        IReadOnlyList<Process> processes,
+        DateTimeOffset capturedAt)
     {
-        DateTimeOffset timestamp = capturedAt ?? DateTimeOffset.UtcNow;
+        ArgumentNullException.ThrowIfNull(processes);
+        DateTimeOffset timestamp = capturedAt.ToUniversalTime();
         IReadOnlyDictionary<int, int> parentIds = ReadParentProcessIds();
         var observations = new List<ProcessLifecycleObservation>();
 
-        foreach (Process process in Process.GetProcesses())
+        foreach (Process process in processes)
         {
-            using (process)
-            {
-                try
+            try
                 {
                     int processId = process.Id;
                     if (processId <= 0)
@@ -64,7 +65,6 @@ internal sealed class WindowsProcessInventoryProvider
                 catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
                 {
                     // Processes can exit or become inaccessible during an inventory pass.
-                }
             }
         }
 
