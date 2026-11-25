@@ -40,7 +40,7 @@ Do not create a public version tag until the project’s manual Windows validati
 
 ## Download counts
 
-The README badge uses GitHub Release asset download totals. GitHub exposes a `download_count` for each Release asset; the repository total shown by the badge is a count of asset downloads, not unique people, active installations, repository clones, or downloads of temporary Actions artifacts.
+The repository is currently private, so this project intentionally does not display a public third-party download badge. GitHub exposes a `download_count` field for each Release asset. Authorized maintainers can inspect these per-asset counts through the GitHub Releases UI or the authenticated GitHub REST API. The count represents asset downloads, not unique people, active installations, repository clones, or downloads of temporary Actions artifacts.
 
 The official GitHub REST response includes the `download_count` field: https://docs.github.com/en/rest/releases/assets.
 
