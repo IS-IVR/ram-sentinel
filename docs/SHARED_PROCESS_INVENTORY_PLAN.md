@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, UI-neutral process-sample orchestration, and a standalone low-resource soak harness implemented. Windows CI run #72 passed for the previous documentation head. Real soak execution on a weak target machine remains open.
+Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, UI-neutral process-sample orchestration, and a standalone low-resource soak harness implemented. Windows CI run #73 passed, including the soak harness smoke check and standalone x64 publish. A follow-up safeguard now prevents duplicate/out-of-order samples from clearing the last accepted process table or diagnostic sample; CI run #75 is validating that change. Real soak execution on a weak target machine remains open.
 
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8).
 
@@ -36,12 +36,13 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - [x] Process-property reader tests verify one read per property, null preservation after access failures, and early stop after PID-read failure.
 - [x] Relationship tracker tests reject impossible parent/child chronology.
 - [x] Processor tests prove process rows, diagnostic samples, and relationship evidence are derived from the same immutable inventory and capture timestamp.
-- [x] Duplicate/out-of-order samples return no process rows, diagnostic samples, or relationship evidence; the last accepted process table and CPU baseline cannot be overwritten by stale data.
+- [x] Duplicate/out-of-order samples return no process rows, diagnostic samples, or relationship evidence and expose `IsAccepted = false`; `MainForm` leaves the last accepted process table and diagnostic samples intact.
 - [x] Processor tests verify incomplete inventory clears relationship confidence, CPU gaps reset baselines, PID reuse cannot inherit CPU history, and out-of-order samples cannot replace newer baselines or populate the process-list/diagnostic output.
 - [x] Windows provider smoke test runs on a real Windows GitHub Actions runner using the current process. It exercises the concrete `System.Diagnostics.Process` adapter and actual Toolhelp P/Invoke path, and verifies process identity, readable properties, parent metadata, timestamp consistency, and the inventory completeness gate.
 - [x] Windows CI run #64 passed for commit `92216f33451943660df8a37e1b256e1606c99750`: Restore, Build, Windows provider integration check, standalone x64 publish, and artifact upload.
 - [x] Windows CI run #68 passed for commit `4fa7b819f405f482bb95826e70f07906eb05b884`: Restore, Build, 62/62 Core checks, Windows provider integration check, standalone x64 publish, and artifact upload.
-- [x] Windows CI run #71 passed for commit `eeda7f5e5579c65ef963fee7370624b3247d74ae`: Build, 62/62 Core checks, Windows provider integration check, standalone x64 publish, and artifact upload (47,297,042 bytes).
+- [x] Windows CI run [#73](https://github.com/IS-IVR/ram-sentinel/actions/runs/45607088929) passed for commit `ad0375a18542557d983df63b6b435436b2bfcc52`: Build, Core checks, Windows provider integration, one-shot soak harness smoke check, standalone x64 app publish, standalone x64 soak-tool publish, and both artifact uploads.
+- [ ] Windows CI run [#75](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609054408) validates the follow-up stale-sample UI-preservation change; do not mark this validation complete until the run succeeds.
 
 ## Remaining validation
 
