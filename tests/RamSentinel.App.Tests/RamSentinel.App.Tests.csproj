@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>RamSentinel.App.Tests</AssemblyName>
+    <RootNamespace>RamSentinel.App.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RamSentinel.App\RamSentinel.App.csproj" />
+    <ProjectReference Include="..\..\src\RamSentinel.Core\RamSentinel.Core.csproj" />
+  </ItemGroup>
+</Project>

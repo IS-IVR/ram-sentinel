@@ -69,9 +69,14 @@
 - [x] איפוס רמת הביטחון לאחר שימוש חוזר ב-PID או פער איסוף ארוך.
 - [x] בדיקות לתהליך הורה חסר, PID כפול, PID ממוחזר וסדר דגימות.
 - [x] Windows Process Inventory Provider: איסוף Parent PID, נתוני תהליך ונתוני I/O באופן חסכוני.
-- [ ] חיבור ה-Provider לרענון התהליכים הקיים ול-ProcessRelationshipTracker, ללא סריקה כפולה.
+- [x] חיבור ה-Provider לרענון התהליכים הקיים ול-ProcessRelationshipTracker באמצעות תצפית בלתי-משתנה וללא סריקה כפולה.
+- [ ] בדיקת Windows ממושכת במחשב חלש ואימות עלות האיסוף לפני הצגת המלצות Lifecycle.
 - [ ] Foreground-window event tracking ללא איסוף כותרות חלונות או קלט משתמש.
-- [ ] בדיקות אינטגרציה על Windows ובדיקת עומס ממושכת.
+- [x] בדיקת אינטגרציה אוטומטית ב-Windows CI ל-Provider, למאפייני התהליך ולצילום Toolhelp מול התהליך הנוכחי.
+- [x] בדיקות Core ל-ProcessInventorySampleProcessor: רשימת תהליכים, דגימות אבחון וקשרי Lifecycle נוצרים מאותו snapshot ומאותו timestamp.
+- [x] דחיית דגימות כפולות/ישנות לפני הפקת שורות תהליכים, מדדי CPU או קשרי Lifecycle.
+- [ ] בדיקת UI בפועל ב-Windows לתצוגת דגימות מלאות, חלקיות וישנות.
+- [ ] בדיקת עומס ממושכת במחשב Windows חלש, כולל מדידת CPU/RAM/זמן איסוף ובדיקת starvation של דגימות לא שלמות.
 
 ### Phase 2 - סיווג והצעות
 - [ ] Application sessions ו-Activity Classifier המבוססים על כמה דגימות.

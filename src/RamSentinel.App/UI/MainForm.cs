@@ -10,15 +10,16 @@ internal sealed class MainForm : Form
     private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
+    private readonly WindowsProcessInventoryProvider _processInventoryProvider = new();
+    private readonly ProcessInventorySampleProcessor _processSampleProcessor =
+        new(Math.Max(1, Environment.ProcessorCount));
     private readonly DiagnosticsEngine _diagnosticsEngine = new();
     private readonly PerformanceSampleHistory _diagnosticHistory = new();
     private readonly DiagnosticsSummaryView _diagnosticsView = new();
-    private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
     private IReadOnlyList<ProcessPerformanceSample> _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
     private DateTimeOffset _lastDiagnosticSampleAt = DateTimeOffset.MinValue;
     private double? _latestCpuPercent;
     private static readonly TimeSpan DiagnosticSampleInterval = TimeSpan.FromSeconds(30);
-    private readonly int _logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 30_000 };
     private readonly NotifyIcon _notifyIcon;
     private readonly Label _statusLabel = new();
@@ -362,7 +363,7 @@ internal sealed class MainForm : Form
                 {
                     try
                     {
-                        _lastProcessSamples = RefreshProcessList();
+                        _lastProcessSamples = RefreshProcessList(now);
                     }
                     catch (Exception ex) when (
                         ex is InvalidOperationException or
@@ -428,83 +429,57 @@ internal sealed class MainForm : Form
         }
     }
 
-    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList()
+    private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList(DateTimeOffset sampledAt)
     {
-        DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
-        var rows = new List<ProcessRow>();
-        var activeProcessIds = new HashSet<int>();
+        sampledAt = sampledAt.ToUniversalTime();
+        ProcessInventorySnapshot inventory;
 
-        foreach (Process process in Process.GetProcesses())
+        try
         {
-            using (process)
-            {
-                try
-                {
-                    int processId = process.Id;
-                    activeProcessIds.Add(processId);
-                    string processName = process.ProcessName;
-                    long workingSet = process.WorkingSet64;
-                    long privateBytes = process.PrivateMemorySize64;
-
-                    DateTime? startedAtUtc = null;
-                    double? cpuPercent = null;
-                    try
-                    {
-                        startedAtUtc = process.StartTime.ToUniversalTime();
-                        TimeSpan totalCpuTime = process.TotalProcessorTime;
-
-                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample? previous) &&
-                            previous is not null &&
-                            previous.StartTimeUtc == startedAtUtc.Value)
-                        {
-                            cpuPercent = CpuUsageCalculator.Calculate(
-                                previous.TotalCpuTime,
-                                totalCpuTime,
-                                sampledAt - previous.SampledAt,
-                                _logicalProcessorCount);
-                        }
-
-                        _processCpuSamples[processId] = new ProcessCpuSample(
-                            startedAtUtc.Value,
-                            totalCpuTime,
-                            sampledAt);
-                    }
-                    catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-                    {
-                        // Some protected processes do not expose timing information.
-                    }
-
-                    rows.Add(new ProcessRow(
-                        processId,
-                        processName,
-                        workingSet,
-                        privateBytes,
-                        cpuPercent,
-                        startedAtUtc));
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-                {
-                    // A process can exit or become inaccessible during sampling.
-                }
-            }
+            inventory = OwnedSnapshotCapture.Execute(
+                enumerate: () => Process.GetProcesses(),
+                capture: processes => _processInventoryProvider.ReadAll(processes, sampledAt),
+                dispose: process => process.Dispose());
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            NotSupportedException)
+        {
+            _processSampleProcessor.Clear();
+            inventory = new ProcessInventorySnapshot(
+                CapturedAt: sampledAt,
+                EnumerationStatus: ProcessEnumerationStatus.Failed,
+                ParentMetadataStatus: ParentMetadataStatus.Unavailable,
+                Entries: Array.Empty<ProcessInventoryEntry>(),
+                FailureReason: $"איסוף נתוני התהליכים נכשל: {exception.Message}");
         }
 
-        // Remove samples for exited processes so the dictionary remains bounded.
-        foreach (int processId in _processCpuSamples.Keys.Where(id => !activeProcessIds.Contains(id)).ToArray())
+        ProcessInventoryProcessingResult processed = _processSampleProcessor.Process(inventory);
+        if (!processed.IsAccepted)
         {
-            _processCpuSamples.Remove(processId);
+            // A duplicate or out-of-order sample must not clear the last valid UI rows or diagnostics.
+            return _lastProcessSamples;
         }
 
-        // Show both memory-heavy and CPU-heavy processes. A small but busy process
-        // must not disappear simply because its RAM use is modest.
-        List<ProcessRow> visibleRows = rows
-            .OrderByDescending(x => x.WorkingSetBytes)
+        if (processed.RelationshipsAdvanced)
+        {
+            _explanationLabel.Text = "האבחון קורא מדדים בלבד. לא מתבצעים שינויים אוטומטיים במחשב.";
+        }
+        else
+        {
+            _explanationLabel.Text =
+                $"מעקב קשרי תהליכים מושהה: {processed.RelationshipPauseReason}";
+        }
+
+        List<ProcessInventoryRow> visibleRows = processed.Rows
+            .OrderByDescending(row => row.WorkingSetBytes ?? 0)
             .Take(15)
-            .Concat(rows.OrderByDescending(x => x.CpuPercent ?? 0d).Take(10))
-            .GroupBy(x => x.ProcessId)
+            .Concat(processed.Rows.OrderByDescending(row => row.CpuPercent ?? 0d).Take(10))
+            .GroupBy(row => row.ProcessId)
             .Select(group => group.First())
-            .OrderByDescending(x => x.CpuPercent ?? 0d)
-            .ThenByDescending(x => x.WorkingSetBytes)
+            .OrderByDescending(row => row.CpuPercent ?? 0d)
+            .ThenByDescending(row => row.WorkingSetBytes ?? 0)
             .Take(20)
             .ToList();
 
@@ -512,13 +487,17 @@ internal sealed class MainForm : Form
         try
         {
             _processList.Items.Clear();
-            foreach (ProcessRow row in visibleRows)
+            foreach (ProcessInventoryRow row in visibleRows)
             {
-                var item = new ListViewItem(row.Name) { Tag = row };
+                var item = new ListViewItem(row.Name ?? "לא זמין") { Tag = row };
                 item.SubItems.Add(row.ProcessId.ToString());
-                item.SubItems.Add(row.CpuPercent.HasValue ? $"{row.CpuPercent.Value:0.0}%" : "מודד...");
-                item.SubItems.Add(FormatBytes((ulong)Math.Max(0, row.WorkingSetBytes)));
-                item.SubItems.Add(FormatBytes((ulong)Math.Max(0, row.PrivateBytes)));
+                item.SubItems.Add(row.CpuPercent.HasValue ? $"{row.CpuPercent.Value:0.0}%" : "לא זמין");
+                item.SubItems.Add(row.WorkingSetBytes.HasValue
+                    ? FormatBytes(row.WorkingSetBytes.Value)
+                    : "לא זמין");
+                item.SubItems.Add(row.PrivateBytes.HasValue
+                    ? FormatBytes(row.PrivateBytes.Value)
+                    : "לא זמין");
                 _processList.Items.Add(item);
             }
         }
@@ -528,21 +507,25 @@ internal sealed class MainForm : Form
         }
 
         _closeSelectedButton.Enabled = _processList.SelectedItems.Count == 1;
-
-        return rows.Select(row => new ProcessPerformanceSample(
-            ProcessId: row.ProcessId,
-            Name: row.Name,
-            CpuPercent: row.CpuPercent,
-            WorkingSetBytes: (ulong)Math.Max(0, row.WorkingSetBytes),
-            PrivateBytes: (ulong)Math.Max(0, row.PrivateBytes),
-            StartedAtUtc: row.StartTimeUtc)).ToArray();
+        return processed.PerformanceSamples;
     }
 
     private void CloseSelectedApplication()
     {
         if (_processList.SelectedItems.Count != 1 ||
-            _processList.SelectedItems[0].Tag is not ProcessRow row)
+            _processList.SelectedItems[0].Tag is not ProcessInventoryRow row)
         {
+            return;
+        }
+
+        if (row.Name is null || row.StartTimeUtc is null)
+        {
+            MessageBox.Show(
+                this,
+                "לא ניתן לאמת את זהות התהליך. לא תישלח בקשת סגירה.",
+                "לא ניתן לבצע פעולה בטוחה",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
             return;
         }
 
@@ -555,17 +538,6 @@ internal sealed class MainForm : Form
                 "פעולה חסומה",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
-            return;
-        }
-
-        if (row.StartTimeUtc is null)
-        {
-            MessageBox.Show(
-                this,
-                "לא ניתן לאמת את זהות התהליך ואת זמן ההפעלה שלו. לא תישלח בקשת סגירה.",
-                "לא ניתן לבצע פעולה בטוחה",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
             return;
         }
 
@@ -728,16 +700,4 @@ internal sealed class MainForm : Form
         return $"{value:0.0} {units[unit]}";
     }
 
-    private sealed record ProcessCpuSample(
-        DateTime StartTimeUtc,
-        TimeSpan TotalCpuTime,
-        DateTimeOffset SampledAt);
-
-    private sealed record ProcessRow(
-        int ProcessId,
-        string Name,
-        long WorkingSetBytes,
-        long PrivateBytes,
-        double? CpuPercent,
-        DateTime? StartTimeUtc);
 }

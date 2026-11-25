@@ -38,6 +38,7 @@ public sealed class ProcessRelationshipTracker
         ProcessLifecycleObservation[] valid = observations
             .Where(item => item is not null &&
                            item.Identity.ProcessId > 0 &&
+                           item.Identity.StartedAtUtc <= capturedAt &&
                            item.ParentProcessId is null or > 0 &&
                            item.CapturedAt == capturedAt)
             .ToArray();
@@ -59,7 +60,8 @@ public sealed class ProcessRelationshipTracker
             if (child.ParentProcessId is not int parentProcessId ||
                 parentProcessId == child.Identity.ProcessId ||
                 ambiguousProcessIds.Contains(parentProcessId) ||
-                !byProcessId.TryGetValue(parentProcessId, out ProcessLifecycleObservation? parent))
+                !byProcessId.TryGetValue(parentProcessId, out ProcessLifecycleObservation? parent) ||
+                parent.Identity.StartedAtUtc > child.Identity.StartedAtUtc)
             {
                 continue;
             }
