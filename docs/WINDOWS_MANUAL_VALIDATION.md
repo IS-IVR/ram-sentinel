@@ -21,7 +21,7 @@
 **חובה לפני Release ראשון.**
 
 1. הורד וחלץ את `ram-sentinel-release-assets`.
-2. הפעל את `RAM-Sentinel-Setup-0.0.0-ci-win-x64.exe` כמשתמש Windows רגיל. אין לבחור Run as administrator.
+2. הפעל את `RAM-Sentinel-Setup-win-x64.exe` כמשתמש Windows רגיל. אין לבחור Run as administrator.
 3. בחר עברית במסך בחירת השפה.
 4. השאר את תיקיית ברירת המחדל תחת `%LOCALAPPDATA%\Programs\RAM Sentinel`.
 5. השלם את ההתקנה. בדוק שנוצר קיצור דרך בתפריט התחלה ושאפשר להפעיל ממנו את RAM Sentinel.
