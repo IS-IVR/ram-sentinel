@@ -750,6 +750,8 @@ internal static class LifecycleEngineChecks
         ProcessInventoryProcessingResult stale = processor.Process(ProcessorSnapshot(
             staleAt,
             ProcessorEntry(500, processStarted, staleAt, null, TimeSpan.FromSeconds(100), 1000, 2000, "Worker")));
+        Assert(!stale.IsAccepted,
+            "An out-of-order inventory must be explicitly rejected for UI and diagnostic consumers.");
         Assert(!stale.RelationshipsAdvanced && stale.Relationships.Count == 0,
             "An out-of-order inventory must not expose relationship state as current for the stale sample.");
         Assert(stale.Rows.Count == 0 && stale.PerformanceSamples.Count == 0,
