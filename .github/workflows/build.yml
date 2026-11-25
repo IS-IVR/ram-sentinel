@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ram-sentinel-\${{ github.ref }}
+  group: ram-sentinel-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -131,8 +131,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          $installer = Join-Path $PWD "artifacts/release/RAM-Sentinel-Setup-$version-win-x64.exe"
+          $installer = Join-Path $PWD 'artifacts/release/RAM-Sentinel-Setup-win-x64.exe'
           $sourceExe = Join-Path $PWD 'artifacts/win-x64/RamSentinel.exe'
           $installDirectory = Join-Path $env:RUNNER_TEMP 'RAM Sentinel Installer Smoke Test'
 
@@ -222,7 +221,7 @@ jobs:
       - name: Publish GitHub Release
         shell: pwsh
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $assetPaths = @(Get-ChildItem -LiteralPath 'artifacts/release-assets' -File | Sort-Object Name | ForEach-Object { $_.FullName })
           if ($assetPaths.Count -ne 3) {
