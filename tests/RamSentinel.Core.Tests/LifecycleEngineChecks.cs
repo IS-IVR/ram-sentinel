@@ -9,7 +9,11 @@ internal static class LifecycleEngineChecks
         ("A missing parent is not inferred from a stale PID", TestMissingParent),
         ("Duplicate process IDs make relationships ambiguous", TestAmbiguousParent),
         ("Out-of-order inventories do not change relationship state", TestOutOfOrderSnapshot),
-        ("A long observation gap resets relationship confidence", TestObservationGap)
+        ("A long observation gap resets relationship confidence", TestObservationGap),
+        ("Incomplete process enumeration blocks relationship tracking", TestIncompleteEnumeration),
+        ("Partial parent metadata blocks relationship tracking", TestPartialParentMetadata),
+        ("A process without verified identity blocks relationship tracking", TestMissingIdentity),
+        ("A complete empty inventory is distinguishable from failure", TestCompleteEmptyInventory)
     ];
 
     private static void TestRepeatedObservation()
@@ -99,6 +103,73 @@ internal static class LifecycleEngineChecks
         Assert(tracker.Observe(afterGap, Snapshot(afterGap, Parent(at), Child(at))).Count == 0,
             "A long gap must reset the relationship instead of implying continuous observation.");
     }
+
+
+    private static void TestIncompleteEnumeration()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var snapshot = new ProcessInventorySnapshot(
+            at,
+            ProcessEnumerationStatus.Failed,
+            ParentMetadataStatus.Complete,
+            [InventoryEntry(at)],
+            "Enumeration failed");
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A failed top-level enumeration must never advance relationship evidence.");
+    }
+
+    private static void TestPartialParentMetadata()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var snapshot = new ProcessInventorySnapshot(
+            at,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Partial,
+            [InventoryEntry(at)]);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "Partial parent metadata must never advance relationship evidence.");
+    }
+
+    private static void TestMissingIdentity()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var entry = InventoryEntry(at) with { Identity = null };
+        var snapshot = new ProcessInventorySnapshot(
+            at,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Complete,
+            [entry]);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A process without a verified creation time must not enter identity-based tracking.");
+    }
+
+    private static void TestCompleteEmptyInventory()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var snapshot = new ProcessInventorySnapshot(
+            at,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Complete,
+            Array.Empty<ProcessInventoryEntry>());
+
+        Assert(snapshot.CanAdvanceRelationships,
+            "A valid empty inventory is complete and must be distinguishable from enumeration failure.");
+    }
+
+    private static ProcessInventoryEntry InventoryEntry(DateTimeOffset at) =>
+        new(
+            ProcessId: 100,
+            Identity: new ProcessIdentity(100, at.AddMinutes(-1)),
+            Name: "Example",
+            ParentProcessId: null,
+            ParentMetadataAvailable: true,
+            WorkingSetBytes: 1024,
+            PrivateBytes: 2048,
+            TotalCpuTime: TimeSpan.FromSeconds(1),
+            CapturedAt: at);
 
     private static ProcessLifecycleObservation Parent(DateTimeOffset startedAt) =>
         new(new ProcessIdentity(100, startedAt), "ParentApp", null, startedAt);
