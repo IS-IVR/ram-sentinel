@@ -63,7 +63,7 @@ public static class ProcessParentSnapshotCapture
             return Failure(
                 parentIds,
                 ParentMetadataStatus.Unavailable,
-                $"Process snapshot creation threw: {exception.Message}");
+                "אירעה חריגה בזמן יצירת צילום התהליכים.");
         }
 
         if (!created.Succeeded)
@@ -71,7 +71,7 @@ public static class ProcessParentSnapshotCapture
             return Failure(
                 parentIds,
                 ParentMetadataStatus.Unavailable,
-                $"Process snapshot creation failed (error {created.ErrorCode}).");
+                $"יצירת צילום התהליכים נכשלה (שגיאה {created.ErrorCode}).");
         }
 
         ParentMetadataStatus status = ParentMetadataStatus.Unavailable;
@@ -90,7 +90,7 @@ public static class ProcessParentSnapshotCapture
                 else
                 {
                     status = ParentMetadataStatus.Unavailable;
-                    failureReason = $"First process snapshot entry failed (error {current.ErrorCode}).";
+                    failureReason = $"קריאת הרשומה הראשונה מצילום התהליכים נכשלה (שגיאה {current.ErrorCode}).";
                 }
             }
             else
@@ -117,7 +117,7 @@ public static class ProcessParentSnapshotCapture
                             status = ParentMetadataStatus.Partial;
                             failureReason = AppendReason(
                                 failureReason,
-                                $"Process snapshot enumeration stopped unexpectedly (error {current.ErrorCode}).");
+                                $"סריקת צילום התהליכים נקטעה באופן בלתי צפוי (שגיאה {current.ErrorCode}).");
                         }
 
                         break;
@@ -143,7 +143,7 @@ public static class ProcessParentSnapshotCapture
                 : ParentMetadataStatus.Partial;
             failureReason = AppendReason(
                 failureReason,
-                $"Process snapshot enumeration threw: {exception.Message}");
+                "אירעה חריגה במהלך סריקת צילום התהליכים.");
         }
         finally
         {
@@ -159,7 +159,7 @@ public static class ProcessParentSnapshotCapture
 
                     failureReason = AppendReason(
                         failureReason,
-                        $"Process snapshot handle could not be closed (error {closed.ErrorCode}).");
+                        $"לא ניתן לשחרר את צילום התהליכים (שגיאה {closed.ErrorCode}).");
                 }
             }
             catch (Exception exception)
@@ -171,7 +171,7 @@ public static class ProcessParentSnapshotCapture
 
                 failureReason = AppendReason(
                     failureReason,
-                    $"Closing the process snapshot threw: {exception.Message}");
+                    "אירעה חריגה בעת שחרור צילום התהליכים.");
             }
         }
 
@@ -195,7 +195,7 @@ public static class ProcessParentSnapshotCapture
             entry.ParentProcessId is < 0 ||
             entry.ParentProcessId == entry.ProcessId)
         {
-            error = "The process snapshot contained an invalid PID/parent PID entry.";
+            error = "צילום התהליכים הכיל PID או Parent PID לא תקין.";
             return false;
         }
 
@@ -203,7 +203,7 @@ public static class ProcessParentSnapshotCapture
                 entry.ProcessId,
                 entry.ParentProcessId is > 0 ? entry.ParentProcessId : null))
         {
-            error = $"The process snapshot contained duplicate PID {entry.ProcessId}.";
+            error = $"צילום התהליכים הכיל PID כפול: {entry.ProcessId}.";
             return false;
         }
 

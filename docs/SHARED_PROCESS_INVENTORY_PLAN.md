@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: shared-snapshot integration implemented; Windows CI passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`; provider-specific deterministic tests and runtime soak test pending  
+Status: shared-snapshot and Toolhelp state-machine integration implemented; Windows CI run #59 passed for commit `2426eb99aeeb25491bf8ce0a3026e694b0180b68`; process-property reader tests and real Windows soak test pending  
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8)
 
 ## Objective
@@ -39,7 +39,7 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 
 ## Remaining validation
 
-- [x] Windows CI passes for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001` (run #56).
+- [x] Windows CI passes for commit `2426eb99aeeb25491bf8ce0a3026e694b0180b68` (run #59).
 - [x] Extract Toolhelp snapshot-state handling into an injectable Core callback state machine and add deterministic tests for creation, first-entry, mid-enumeration, end-of-list, close, and duplicate-PID cases.
 - [ ] Add a deterministic property-reader seam proving each Process property is sampled once and inaccessible/closed-process cases preserve null values.
 - [ ] Review the thin Windows P/Invoke adapter on a real Windows host; the callback state machine is tested, but the P/Invoke marshalling itself is not mocked in Core tests.
