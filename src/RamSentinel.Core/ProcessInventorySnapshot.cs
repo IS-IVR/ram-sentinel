@@ -52,6 +52,7 @@ public sealed record ProcessInventorySnapshot(
         {
             if (EnumerationStatus != ProcessEnumerationStatus.Complete ||
                 ParentMetadataStatus != ParentMetadataStatus.Complete ||
+                !string.IsNullOrWhiteSpace(FailureReason) ||
                 Entries is null)
             {
                 return false;
@@ -65,6 +66,7 @@ public sealed record ProcessInventorySnapshot(
                     entry.Identity is null ||
                     entry.Identity.ProcessId != entry.ProcessId ||
                     entry.CapturedAt != CapturedAt ||
+                    entry.ParentProcessId is <= 0 ||
                     !entry.ParentMetadataAvailable ||
                     !seenProcessIds.Add(entry.ProcessId))
                 {

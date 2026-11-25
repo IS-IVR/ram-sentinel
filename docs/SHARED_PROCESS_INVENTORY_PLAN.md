@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: implementation updated; Windows CI validation pending  
+Status: shared-snapshot integration implemented; Windows CI passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`; provider-specific deterministic tests and runtime soak test pending  
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8)
 
 ## Objective
@@ -28,15 +28,20 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - The owned-snapshot helper calls the enumerator exactly once.
 - Every item is disposed exactly once after a successful capture.
 - Every item is disposed exactly once when the capture callback throws, and the original capture exception is rethrown.
-- Existing Core checks cover failed enumeration, partial parent metadata, missing identity, empty successful inventory, PID mismatch, timestamp mismatch, and unavailable parent metadata.
+- Existing Core checks cover failed enumeration, partial parent metadata, missing identity, empty successful inventory, PID mismatch, timestamp mismatch, unavailable parent metadata, and duplicate PIDs.
+- Snapshot gating also rejects non-empty failure reasons and invalid non-null parent PIDs.
+- Windows CI run #56 passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`: restore, build, all Core checks, standalone x64 publish, and artifact upload.
+- The current Core tests do not yet directly execute the Windows P/Invoke provider; provider-specific injection seams and deterministic Toolhelp failure tests remain outstanding.
 
 ## Remaining validation
 
-- [ ] Windows CI passes for this exact commit.
-- [ ] Review the final PR diff.
-- [ ] Run on a real Windows machine with low available RAM and a large process count; record the collector's CPU, memory, and elapsed-time overhead.
-- [ ] Confirm no repeated partial Toolhelp snapshots starve relationship tracking on the target Windows versions.
-- [ ] Keep all lifecycle recommendations and automated process actions disabled until the runtime soak test is complete.
+- [x] Windows CI passes for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001` (run #56).
+- [ ] Add injectable Toolhelp and process-property capture seams; test snapshot creation failure, Process32First failure, mid-enumeration failure, and property-read failures deterministically.
+- [ ] Add a Windows integration test proving all UI/CPU/lifecycle consumers reuse the same immutable entry and timestamp.
+- [ ] Review the final PR diff after provider-specific tests are added.
+- [ ] Run on a real Windows machine with low available RAM and a large process count; record collector CPU, memory, and elapsed-time overhead.
+- [ ] Confirm strict completeness does not starve relationship tracking on the target Windows versions.
+- [ ] Keep all lifecycle recommendations and automated process actions disabled until provider tests and runtime soak validation are complete.
 
 ## Safety and privacy
 

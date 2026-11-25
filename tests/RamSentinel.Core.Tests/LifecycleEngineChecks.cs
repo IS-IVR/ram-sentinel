@@ -19,7 +19,9 @@ internal static class LifecycleEngineChecks
         ("Unavailable parent metadata on an entry blocks relationship tracking", TestEntryParentMetadataUnavailable),
         ("Duplicate PIDs block relationship tracking", TestDuplicateInventoryPid),
         ("Owned snapshot enumerates once and disposes every item", TestOwnedSnapshotOwnership),
-        ("Owned snapshot disposes every item after capture failure", TestOwnedSnapshotDisposalAfterFailure)
+        ("Owned snapshot disposes every item after capture failure", TestOwnedSnapshotDisposalAfterFailure),
+        ("An inventory failure reason blocks relationship tracking", TestFailureReasonBlocksTracking),
+        ("An invalid parent PID blocks relationship tracking", TestInvalidParentPidBlocksTracking)
     ];
 
     private static void TestRepeatedObservation()
@@ -258,6 +260,28 @@ internal static class LifecycleEngineChecks
         Assert(enumerationCalls == 1, "The enumerator must still be called exactly once.");
         Assert(disposed.SequenceEqual([4, 5, 6]),
             "Every owned item must be disposed exactly once after capture fails.");
+    }
+
+    private static void TestFailureReasonBlocksTracking()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        ProcessInventorySnapshot snapshot = CompleteSnapshot(at, InventoryEntry(at)) with
+        {
+            FailureReason = "The provider reported an incomplete capture."
+        };
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A snapshot carrying a failure reason must not advance relationship evidence.");
+    }
+
+    private static void TestInvalidParentPidBlocksTracking()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        ProcessInventoryEntry entry = InventoryEntry(at) with { ParentProcessId = 0 };
+        ProcessInventorySnapshot snapshot = CompleteSnapshot(at, entry);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A non-null parent PID must be a positive process identifier.");
     }
 
     private static void TestEntryParentMetadataUnavailable()
