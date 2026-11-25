@@ -17,7 +17,7 @@ Implemented on `feature/shared-process-inventory`:
 - CPU history is keyed by `ProcessIdentity` (PID + start time), rather than PID alone.
 - Relationship tracking is currently gated by an all-processes-have-observations count check.
 - The existing diagnostic cadence and explicit user-confirmed normal-close flow remain unchanged.
-- CI workflow trigger was widened in commit `ee7a0223810162e92da6d23babab956be0ed8859` so stacked pull requests targeting feature branches are validated. GitHub Actions run 45 is the first run using this trigger; its result is pending at this checkpoint.
+- CI workflow trigger was widened in commit `ee7a0223810162e92da6d23babab956be0ed8859` so stacked pull requests targeting feature branches are validated. Run 45 was cancelled when a newer commit superseded it; run 46 for head `7771d68ed53f0eed5fa61e18b6da93bad1f5e37c` completed successfully. This confirms the current compile/Core test workflow, not the unimplemented deterministic Windows-provider failure-path tests or runtime behavior.
 
 This is not yet a correct shared-observation implementation: `MainForm` currently reads `Process.StartTime` and `TotalProcessorTime` again after the provider has already read them. It also reads process name and memory values independently. The duplicated identity read creates a race and violates the single immutable observation rule. The current count-based completeness check can also starve tracking on systems where even one process is inaccessible.
 
@@ -109,7 +109,8 @@ Tests should use injected interfaces/delegates for process enumeration, process-
 - [ ] Add injectable enumeration/capture/disposal seams.
 - [ ] Add deterministic tests for identity, partial snapshots, Toolhelp failures, and disposal.
 - [ ] Verify UI-only refresh does not enumerate processes.
-- [ ] Confirm GitHub Actions run 45 passes, then run CI on all subsequent implementation commits.
+- [x] Confirm the updated stacked-PR workflow runs: run 46 completed successfully for the current PR #8 head at this checkpoint.
+- [ ] Run CI after every subsequent implementation commit; a green build does not replace the deterministic provider tests or Windows runtime validation.
 - [ ] Perform a low-resource Windows runtime soak test before enabling any lifecycle interpretation.
 
 ## Acceptance
