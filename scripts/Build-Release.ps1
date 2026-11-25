@@ -26,7 +26,7 @@ function Resolve-RepositoryPath {
 $publishPath = Resolve-RepositoryPath -Path $PublishDirectory
 $outputPath = Resolve-RepositoryPath -Path $OutputDirectory
 $appExecutable = Join-Path $publishPath 'RamSentinel.exe'
-$installerName = "RAM-Sentinel-Setup-$AppVersion-win-x64.exe"
+$installerName = "RAM-Sentinel-Setup-win-x64.exe"
 $portableName = "RAM-Sentinel-Portable-$AppVersion-win-x64.zip"
 $installerPath = Join-Path $outputPath $installerName
 $portablePath = Join-Path $outputPath $portableName
