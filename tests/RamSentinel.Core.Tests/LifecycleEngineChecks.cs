@@ -752,8 +752,10 @@ internal static class LifecycleEngineChecks
             ProcessorEntry(500, processStarted, staleAt, null, TimeSpan.FromSeconds(100), 1000, 2000, "Worker")));
         Assert(!stale.RelationshipsAdvanced && stale.Relationships.Count == 0,
             "An out-of-order inventory must not expose relationship state as current for the stale sample.");
-        Assert(stale.PerformanceSamples.Single().CpuPercent is null,
-            "CPU percent for an out-of-order inventory must be unavailable.");
+        Assert(stale.Rows.Count == 0 && stale.PerformanceSamples.Count == 0,
+            "An out-of-order inventory must not replace the process-list rows or diagnostic samples.");
+        Assert(stale.Relationships.Count == 0,
+            "An out-of-order inventory must not expose current relationship evidence as belonging to stale data.");
 
         DateTimeOffset nextAt = start.AddSeconds(60);
         ProcessInventoryProcessingResult next = processor.Process(ProcessorSnapshot(

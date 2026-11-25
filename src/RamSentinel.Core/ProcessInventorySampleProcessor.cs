@@ -57,14 +57,28 @@ public sealed class ProcessInventorySampleProcessor
 
         bool isNewerSample = !_lastProcessedAt.HasValue ||
                              inventory.CapturedAt > _lastProcessedAt.Value;
+        if (!isNewerSample)
+        {
+            // A stale sample must not replace the currently displayed process table either.
+            return new ProcessInventoryProcessingResult(
+                Inventory: inventory,
+                Rows: Array.Empty<ProcessInventoryRow>(),
+                PerformanceSamples: Array.Empty<ProcessPerformanceSample>(),
+                Relationships: Array.Empty<ProcessRelationship>(),
+                RelationshipsAdvanced: false,
+                RelationshipPauseReason: "הדגימה כפולה או ישנה יותר מהדגימה האחרונה; לא עודכנו נתוני תהליכים.");
+        }
+
         bool relationshipsAdvanced = false;
+        IReadOnlyList<ProcessInventoryEntry> entries =
+            inventory.Entries ?? Array.Empty<ProcessInventoryEntry>();
 
         if (isNewerSample)
         {
             relationshipsAdvanced = inventory.CanAdvanceRelationships;
             if (relationshipsAdvanced)
             {
-                ProcessLifecycleObservation[] lifecycleObservations = inventory.Entries
+                ProcessLifecycleObservation[] lifecycleObservations = entries
                     .Select(entry => new ProcessLifecycleObservation(
                         Identity: entry.Identity!,
                         Name: entry.Name,
@@ -93,7 +107,7 @@ public sealed class ProcessInventorySampleProcessor
         var rows = new List<ProcessInventoryRow>();
         var activeIdentities = new HashSet<ProcessIdentity>();
 
-        foreach (ProcessInventoryEntry entry in inventory.Entries)
+        foreach (ProcessInventoryEntry entry in entries
         {
             if (entry is null || entry.ProcessId <= 0)
             {
@@ -169,9 +183,7 @@ public sealed class ProcessInventorySampleProcessor
             RelationshipsAdvanced: relationshipsAdvanced,
             RelationshipPauseReason: relationshipsAdvanced
                 ? null
-                : isNewerSample
-                    ? inventory.FailureReason ?? "נתוני האיסוף אינם מלאים."
-                    : "הדגימה כפולה או ישנה יותר מהדגימה האחרונה; היסטוריית CPU וקשרי תהליכים לא עודכנו.");
+                : inventory.FailureReason ?? "נתוני האיסוף אינם מלאים.");
     }
 
     /// <summary>Clears both cumulative CPU baselines and lifecycle relationship evidence.</summary>
