@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using RamSentinel.Core;
@@ -11,6 +10,8 @@ namespace RamSentinel.App.Platform;
 /// </summary>
 internal sealed class WindowsProcessInventoryProvider
 {
+    private readonly ProcessPropertyReader _processPropertyReader = new();
+
     public ProcessInventorySnapshot ReadAll(
         IReadOnlyList<Process> processes,
         DateTimeOffset capturedAt)
@@ -31,12 +32,8 @@ internal sealed class WindowsProcessInventoryProvider
 
         foreach (Process process in processes)
         {
-            int processId;
-            try
-            {
-                processId = process.Id;
-            }
-            catch (Exception exception) when (IsExpectedProcessAccessFailure(exception))
+            ProcessPropertyObservation properties = _processPropertyReader.Capture(process);
+            if (properties.ProcessId is not int processId)
             {
                 enumerationStatus = ProcessEnumerationStatus.Failed;
                 failureReasons.Add("לא ניתן לקרוא PID של אחד התהליכים במהלך הדגימה.");
@@ -56,12 +53,11 @@ internal sealed class WindowsProcessInventoryProvider
                 continue;
             }
 
-            DateTimeOffset? startedAt = TryRead(() =>
-                new DateTimeOffset(process.StartTime.ToUniversalTime()));
-            string? name = TryRead(() => process.ProcessName);
-            ulong? workingSet = TryRead(() => ToUnsigned(process.WorkingSet64));
-            ulong? privateBytes = TryRead(() => ToUnsigned(process.PrivateMemorySize64));
-            TimeSpan? totalCpuTime = TryRead(() => process.TotalProcessorTime);
+            DateTimeOffset? startedAt = properties.StartedAtUtc;
+            string? name = properties.Name;
+            ulong? workingSet = properties.WorkingSetBytes;
+            ulong? privateBytes = properties.PrivateBytes;
+            TimeSpan? totalCpuTime = properties.TotalCpuTime;
             IoCounters? io = TryReadIoCounters(processId);
 
             bool parentAvailable = parentSnapshot.ParentIds.TryGetValue(
@@ -201,28 +197,6 @@ internal sealed class WindowsProcessInventoryProvider
             CloseHandle(handle);
         }
     }
-
-    private static T? TryRead<T>(Func<T> read)
-    {
-        try
-        {
-            return read();
-        }
-        catch (Exception exception) when (IsExpectedProcessAccessFailure(exception))
-        {
-            return default;
-        }
-    }
-
-    private static bool IsExpectedProcessAccessFailure(Exception exception) =>
-        exception is InvalidOperationException
-            or Win32Exception
-            or NotSupportedException
-            or UnauthorizedAccessException
-            or ArgumentException;
-
-    private static ulong? ToUnsigned(long value) =>
-        value >= 0 ? (ulong)value : null;
 
     private static readonly IntPtr InvalidHandleValue = new(-1);
     private const uint TH32CS_SNAPPROCESS = 0x00000002;

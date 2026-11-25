@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RamSentinel.Core;
 
 internal static class LifecycleEngineChecks
@@ -30,7 +31,10 @@ internal static class LifecycleEngineChecks
         ("A mid-enumeration Toolhelp error is partial", TestParentSnapshotMidEnumerationFailure),
         ("A normal Toolhelp end-of-list is complete", TestParentSnapshotNormalEnd),
         ("A Toolhelp close failure downgrades completeness", TestParentSnapshotCloseFailure),
-        ("Duplicate Toolhelp PIDs downgrade completeness", TestParentSnapshotDuplicatePid)
+        ("Duplicate Toolhelp PIDs downgrade completeness", TestParentSnapshotDuplicatePid),
+        ("Process properties are each read exactly once", TestProcessPropertiesReadOnce),
+        ("Unavailable process properties remain null", TestProcessPropertiesRemainNullWhenUnavailable),
+        ("An unavailable PID prevents other process-property reads", TestProcessIdFailureStopsCapture),
     ];
 
     private static void TestRepeatedObservation()
@@ -460,6 +464,81 @@ internal static class LifecycleEngineChecks
             "A duplicate PID in a native snapshot must never be reported as complete.");
     }
 
+    private static void TestProcessPropertiesReadOnce()
+    {
+        using var process = new Process();
+        var access = new CountingProcessPropertyAccess();
+        var reader = new ProcessPropertyReader(access);
+
+        ProcessPropertyObservation observation = reader.Capture(process);
+
+        Assert(observation.ProcessId == access.ProcessId, "The captured PID should match the accessor.");
+        Assert(observation.StartedAtUtc == access.StartedAtUtc, "The creation timestamp should be reused.");
+        Assert(observation.Name == access.Name, "The process name should be reused.");
+        Assert(observation.WorkingSetBytes == (ulong)access.WorkingSetBytes,
+            "Working set should be converted without changing its value.");
+        Assert(observation.PrivateBytes == (ulong)access.PrivateBytes,
+            "Private bytes should be converted without changing its value.");
+        Assert(observation.TotalCpuTime == access.TotalCpuTime,
+            "Cumulative CPU time should be reused.");
+
+        Assert(access.ProcessIdReads == 1, "PID must be read exactly once.");
+        Assert(access.StartedAtReads == 1, "Start time must be read exactly once.");
+        Assert(access.NameReads == 1, "Process name must be read exactly once.");
+        Assert(access.WorkingSetReads == 1, "Working set must be read exactly once.");
+        Assert(access.PrivateBytesReads == 1, "Private bytes must be read exactly once.");
+        Assert(access.CpuTimeReads == 1, "Cumulative CPU time must be read exactly once.");
+    }
+
+    private static void TestProcessPropertiesRemainNullWhenUnavailable()
+    {
+        using var process = new Process();
+        var access = new CountingProcessPropertyAccess
+        {
+            ThrowOnStartTime = true,
+            ThrowOnName = true,
+            ThrowOnWorkingSet = true,
+            ThrowOnPrivateBytes = true,
+            ThrowOnCpuTime = true
+        };
+        var reader = new ProcessPropertyReader(access);
+
+        ProcessPropertyObservation observation = reader.Capture(process);
+
+        Assert(observation.ProcessId == access.ProcessId,
+            "The readable PID should remain available.");
+        Assert(observation.StartedAtUtc is null, "An inaccessible creation time must stay null.");
+        Assert(observation.Name is null, "An inaccessible process name must stay null.");
+        Assert(observation.WorkingSetBytes is null, "An inaccessible working set must stay null.");
+        Assert(observation.PrivateBytes is null, "Inaccessible private bytes must stay null.");
+        Assert(observation.TotalCpuTime is null, "Inaccessible cumulative CPU time must stay null.");
+
+        Assert(access.StartedAtReads == 1 && access.NameReads == 1 &&
+               access.WorkingSetReads == 1 && access.PrivateBytesReads == 1 &&
+               access.CpuTimeReads == 1,
+            "A failed property read must not be retried in the same capture.");
+    }
+
+    private static void TestProcessIdFailureStopsCapture()
+    {
+        using var process = new Process();
+        var access = new CountingProcessPropertyAccess { ThrowOnProcessId = true };
+        var reader = new ProcessPropertyReader(access);
+
+        ProcessPropertyObservation observation = reader.Capture(process);
+
+        Assert(observation.ProcessId is null, "A failed PID read must not create an identity.");
+        Assert(observation.StartedAtUtc is null && observation.Name is null &&
+               observation.WorkingSetBytes is null && observation.PrivateBytes is null &&
+               observation.TotalCpuTime is null,
+            "No dependent property should be read without a PID.");
+        Assert(access.ProcessIdReads == 1, "The PID accessor must be called once.");
+        Assert(access.StartedAtReads == 0 && access.NameReads == 0 &&
+               access.WorkingSetReads == 0 && access.PrivateBytesReads == 0 &&
+               access.CpuTimeReads == 0,
+            "Other accessors must not run after the PID read fails.");
+    }
+
     private static void TestEntryParentMetadataUnavailable()
     {
         DateTimeOffset at = DateTimeOffset.UtcNow;
@@ -501,6 +580,72 @@ internal static class LifecycleEngineChecks
         DateTimeOffset capturedAt,
         params ProcessLifecycleObservation[] items) =>
         items.Select(item => item with { CapturedAt = capturedAt }).ToArray();
+
+    private sealed class CountingProcessPropertyAccess : IProcessPropertyAccess
+    {
+        public int ProcessId { get; init; } = 321;
+        public DateTimeOffset StartedAtUtc { get; init; } = DateTimeOffset.UtcNow.AddMinutes(-5);
+        public string Name { get; init; } = "Example";
+        public long WorkingSetBytes { get; init; } = 4096;
+        public long PrivateBytes { get; init; } = 8192;
+        public TimeSpan TotalCpuTime { get; init; } = TimeSpan.FromSeconds(12);
+
+        public bool ThrowOnProcessId { get; init; }
+        public bool ThrowOnStartTime { get; init; }
+        public bool ThrowOnName { get; init; }
+        public bool ThrowOnWorkingSet { get; init; }
+        public bool ThrowOnPrivateBytes { get; init; }
+        public bool ThrowOnCpuTime { get; init; }
+
+        public int ProcessIdReads { get; private set; }
+        public int StartedAtReads { get; private set; }
+        public int NameReads { get; private set; }
+        public int WorkingSetReads { get; private set; }
+        public int PrivateBytesReads { get; private set; }
+        public int CpuTimeReads { get; private set; }
+
+        public int ReadProcessId(Process process)
+        {
+            ProcessIdReads++;
+            if (ThrowOnProcessId) throw new InvalidOperationException("PID is unavailable.");
+            return ProcessId;
+        }
+
+        public DateTimeOffset ReadStartedAtUtc(Process process)
+        {
+            StartedAtReads++;
+            if (ThrowOnStartTime) throw new InvalidOperationException("Start time is unavailable.");
+            return StartedAtUtc;
+        }
+
+        public string ReadProcessName(Process process)
+        {
+            NameReads++;
+            if (ThrowOnName) throw new InvalidOperationException("Name is unavailable.");
+            return Name;
+        }
+
+        public long ReadWorkingSetBytes(Process process)
+        {
+            WorkingSetReads++;
+            if (ThrowOnWorkingSet) throw new InvalidOperationException("Working set is unavailable.");
+            return WorkingSetBytes;
+        }
+
+        public long ReadPrivateBytes(Process process)
+        {
+            PrivateBytesReads++;
+            if (ThrowOnPrivateBytes) throw new InvalidOperationException("Private bytes are unavailable.");
+            return PrivateBytes;
+        }
+
+        public TimeSpan ReadTotalCpuTime(Process process)
+        {
+            CpuTimeReads++;
+            if (ThrowOnCpuTime) throw new InvalidOperationException("CPU time is unavailable.");
+            return TotalCpuTime;
+        }
+    }
 
     private static void Assert(bool condition, string message)
     {
