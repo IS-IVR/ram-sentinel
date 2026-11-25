@@ -448,9 +448,12 @@ internal sealed class MainForm : Form
             NotSupportedException)
         {
             _processCpuSamples.Clear();
-            _processRelationshipTracker.Clear();
-            _explanationLabel.Text = $"איסוף נתוני תהליכים נכשל: {exception.Message}";
-            return Array.Empty<ProcessPerformanceSample>();
+            inventory = new ProcessInventorySnapshot(
+                CapturedAt: sampledAt,
+                EnumerationStatus: ProcessEnumerationStatus.Failed,
+                ParentMetadataStatus: ParentMetadataStatus.Unavailable,
+                Entries: Array.Empty<ProcessInventoryEntry>(),
+                FailureReason: $"איסוף נתוני התהליכים נכשל: {exception.Message}");
         }
 
         if (inventory.CanAdvanceRelationships)
@@ -610,17 +613,6 @@ internal sealed class MainForm : Form
                 "פעולה חסומה",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
-            return;
-        }
-
-        if (row.StartTimeUtc is null)
-        {
-            MessageBox.Show(
-                this,
-                "לא ניתן לאמת את זהות התהליך ואת זמן ההפעלה שלו. לא תישלח בקשת סגירה.",
-                "לא ניתן לבצע פעולה בטוחה",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
             return;
         }
 

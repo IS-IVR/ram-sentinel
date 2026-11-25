@@ -127,7 +127,7 @@ internal sealed class WindowsProcessInventoryProvider
                 $"יצירת צילום תהליכי Windows נכשלה (Win32 {error}).");
         }
 
-        ParentMetadataStatus status;
+        ParentMetadataStatus status = ParentMetadataStatus.Unavailable;
         string? failureReason = null;
 
         try
