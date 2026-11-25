@@ -15,7 +15,7 @@ internal sealed class MainForm : Form
     private readonly DiagnosticsEngine _diagnosticsEngine = new();
     private readonly PerformanceSampleHistory _diagnosticHistory = new();
     private readonly DiagnosticsSummaryView _diagnosticsView = new();
-    private readonly Dictionary<int, ProcessCpuSample> _processCpuSamples = new();
+    private readonly Dictionary<ProcessIdentity, ProcessCpuSample> _processCpuSamples = new();
     private IReadOnlyList<ProcessPerformanceSample> _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
     private DateTimeOffset _lastDiagnosticSampleAt = DateTimeOffset.MinValue;
     private double? _latestCpuPercent;
@@ -435,7 +435,7 @@ internal sealed class MainForm : Form
         DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
         Process[] processes = Process.GetProcesses();
         var rows = new List<ProcessRow>();
-        var activeProcessIds = new HashSet<int>();
+        var activeProcessIdentities = new HashSet<ProcessIdentity>();
 
         try
         {
@@ -453,7 +453,6 @@ internal sealed class MainForm : Form
                 try
                 {
                     int processId = process.Id;
-                    activeProcessIds.Add(processId);
                     string processName = process.ProcessName;
                     long workingSet = process.WorkingSet64;
                     long privateBytes = process.PrivateMemorySize64;
@@ -465,9 +464,10 @@ internal sealed class MainForm : Form
                         startedAtUtc = process.StartTime.ToUniversalTime();
                         TimeSpan totalCpuTime = process.TotalProcessorTime;
 
-                        if (_processCpuSamples.TryGetValue(processId, out ProcessCpuSample? previous) &&
-                            previous is not null &&
-                            previous.StartTimeUtc == startedAtUtc.Value)
+                        var identity = new ProcessIdentity(processId, new DateTimeOffset(startedAtUtc.Value));
+                        activeProcessIdentities.Add(identity);
+                        if (_processCpuSamples.TryGetValue(identity, out ProcessCpuSample? previous) &&
+                            previous is not null)
                         {
                             cpuPercent = CpuUsageCalculator.Calculate(
                                 previous.TotalCpuTime,
@@ -476,7 +476,7 @@ internal sealed class MainForm : Form
                                 _logicalProcessorCount);
                         }
 
-                        _processCpuSamples[processId] = new ProcessCpuSample(
+                        _processCpuSamples[identity] = new ProcessCpuSample(
                             startedAtUtc.Value,
                             totalCpuTime,
                             sampledAt);
@@ -510,9 +510,9 @@ internal sealed class MainForm : Form
         }
 
         // Remove samples for exited processes so the dictionary remains bounded.
-        foreach (int processId in _processCpuSamples.Keys.Where(id => !activeProcessIds.Contains(id)).ToArray())
+        foreach (ProcessIdentity identity in _processCpuSamples.Keys.Where(id => !activeProcessIdentities.Contains(id)).ToArray())
         {
-            _processCpuSamples.Remove(processId);
+            _processCpuSamples.Remove(identity);
         }
 
         List<ProcessRow> visibleRows = rows
