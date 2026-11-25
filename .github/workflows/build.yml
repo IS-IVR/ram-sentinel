@@ -87,7 +87,7 @@ jobs:
         run: dotnet publish .\tools\RamSentinel.InventorySoak\RamSentinel.InventorySoak.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\artifacts\inventory-soak-win-x64
 
       - name: Ensure Inno Setup 6 is available
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
@@ -107,11 +107,16 @@ jobs:
           if (-not $compiler) { throw 'ISCC.exe was not found after installing Inno Setup 6.' }
 
       - name: Build installer, Portable ZIP and SHA-256
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = '0.0.0-ci'
+          }
           .\scripts\Build-Release.ps1 -AppVersion $version
+          if ($LASTEXITCODE -ne 0) { throw "Release packaging failed: $LASTEXITCODE" }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -128,7 +133,7 @@ jobs:
           if-no-files-found: error
 
       - name: Smoke test per-user install and uninstall
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $installer = Join-Path $PWD 'artifacts/release/RAM-Sentinel-Setup-win-x64.exe'
@@ -187,6 +192,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ram-sentinel-release-assets
+          path: .\artifacts\release\
+          if-no-files-found: error
+
+      # Pull requests get a validation build but never publish a GitHub Release.
+      - name: Upload installer validation artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-sentinel-installer-validation
           path: .\artifacts\release\
           if-no-files-found: error
 
