@@ -35,6 +35,10 @@ internal static class LifecycleEngineChecks
         ("Process properties are each read exactly once", TestProcessPropertiesReadOnce),
         ("Unavailable process properties remain null", TestProcessPropertiesRemainNullWhenUnavailable),
         ("An unavailable PID prevents other process-property reads", TestProcessIdFailureStopsCapture),
+        ("Processor derives UI and diagnostic rows from the same immutable inventory", TestProcessorSharedSnapshotConsumers),
+        ("Incomplete inventory clears previous relationship confidence", TestProcessorClearsRelationshipsOnIncompleteInventory),
+        ("Missing CPU samples reset the cumulative CPU baseline", TestProcessorResetsMissingCpuBaseline),
+        ("A reused PID never inherits another process instance CPU history", TestProcessorPidReuseResetsCpuHistory),
     ];
 
     private static void TestRepeatedObservation()
@@ -538,6 +542,191 @@ internal static class LifecycleEngineChecks
                access.CpuTimeReads == 0,
             "Other accessors must not run after the PID read fails.");
     }
+
+    private static void TestProcessorSharedSnapshotConsumers()
+    {
+        DateTimeOffset firstAt = DateTimeOffset.UtcNow;
+        DateTimeOffset secondAt = firstAt.AddSeconds(30);
+        DateTimeOffset parentStarted = firstAt.AddMinutes(-10);
+        DateTimeOffset childStarted = firstAt.AddMinutes(-5);
+        var processor = new ProcessInventorySampleProcessor(logicalProcessorCount: 1);
+
+        ProcessInventorySnapshot firstInventory = ProcessorSnapshot(
+            firstAt,
+            ProcessorEntry(100, parentStarted, firstAt, null, TimeSpan.FromSeconds(1), 4096, 8192, "Parent"),
+            ProcessorEntry(200, childStarted, firstAt, 100, TimeSpan.FromSeconds(2), 2048, 4096, "Child"));
+        ProcessInventoryProcessingResult first = processor.Process(firstInventory);
+
+        Assert(ReferenceEquals(first.Inventory, firstInventory),
+            "The processing result must retain the exact source inventory instance.");
+        Assert(first.Rows.Count == 2 && first.PerformanceSamples.Count == 2,
+            "Both process rows and diagnostic samples must derive from the same two entries.");
+        Assert(first.Relationships.Count == 0,
+            "A single sample must not establish a repeated parent-child relationship.");
+
+        ProcessInventorySnapshot secondInventory = ProcessorSnapshot(
+            secondAt,
+            ProcessorEntry(100, parentStarted, secondAt, null, TimeSpan.FromSeconds(2), 4096, 8192, "Parent"),
+            ProcessorEntry(200, childStarted, secondAt, 100, TimeSpan.FromSeconds(3), 2048, 4096, "Child"));
+        ProcessInventoryProcessingResult second = processor.Process(secondInventory);
+
+        Assert(ReferenceEquals(second.Inventory, secondInventory),
+            "All consumers must share the exact immutable inventory passed to the processor.");
+        Assert(second.RelationshipsAdvanced && second.Relationships.Count == 1,
+            "The lifecycle tracker must consume the same complete inventory.");
+        Assert(second.Relationships[0].LastObservedAt == secondInventory.CapturedAt,
+            "Relationship timestamps must match the source inventory timestamp.");
+
+        ProcessInventoryRow childRow = second.Rows.Single(row => row.ProcessId == 200);
+        ProcessPerformanceSample childSample =
+            second.PerformanceSamples.Single(sample => sample.ProcessId == 200);
+
+        Assert(childRow.Name == "Child" && childSample.Name == childRow.Name,
+            "The process list and diagnostics must use the same captured process name.");
+        Assert(childRow.StartTimeUtc == childStarted.UtcDateTime &&
+               childSample.StartedAtUtc == childRow.StartTimeUtc,
+            "Both projections must use the same captured process identity.");
+        Assert(childRow.WorkingSetBytes == 2048 &&
+               childSample.WorkingSetBytes == childRow.WorkingSetBytes,
+            "Both projections must use the same captured memory value.");
+        Assert(childRow.CpuPercent.HasValue &&
+               Math.Abs(childRow.CpuPercent.Value - 3.333333333d) < 0.001 &&
+               childSample.CpuPercent == childRow.CpuPercent,
+            "CPU history and diagnostic samples must use one shared calculated CPU result.");
+        Assert(second.Inventory.CapturedAt == secondInventory.CapturedAt,
+            "All derived views must retain the exact source sample timestamp.");
+    }
+
+    private static void TestProcessorClearsRelationshipsOnIncompleteInventory()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var processor = new ProcessInventorySampleProcessor(logicalProcessorCount: 1);
+        DateTimeOffset parentStarted = start.AddMinutes(-10);
+        DateTimeOffset childStarted = start.AddMinutes(-5);
+
+        _ = processor.Process(ProcessorSnapshot(
+            start,
+            ProcessorEntry(100, parentStarted, start, null, TimeSpan.FromSeconds(1), 4096, 8192, "Parent"),
+            ProcessorEntry(200, childStarted, start, 100, TimeSpan.FromSeconds(2), 2048, 4096, "Child")));
+
+        DateTimeOffset establishedAt = start.AddSeconds(30);
+        ProcessInventoryProcessingResult established = processor.Process(ProcessorSnapshot(
+            establishedAt,
+            ProcessorEntry(100, parentStarted, establishedAt, null, TimeSpan.FromSeconds(2), 4096, 8192, "Parent"),
+            ProcessorEntry(200, childStarted, establishedAt, 100, TimeSpan.FromSeconds(3), 2048, 4096, "Child")));
+        Assert(established.Relationships.Count == 1,
+            "The repeated complete inventory should establish one relationship.");
+
+        DateTimeOffset incompleteAt = start.AddSeconds(60);
+        ProcessInventorySnapshot incomplete = new(
+            incompleteAt,
+            ProcessEnumerationStatus.Failed,
+            ParentMetadataStatus.Partial,
+            [ProcessorEntry(100, parentStarted, incompleteAt, null, TimeSpan.FromSeconds(3), 4096, 8192, "Parent")],
+            "Injected partial inventory");
+        ProcessInventoryProcessingResult paused = processor.Process(incomplete);
+
+        Assert(!paused.RelationshipsAdvanced && paused.Relationships.Count == 0,
+            "An incomplete inventory must clear existing relationship confidence.");
+
+        DateTimeOffset recoveredAt = start.AddSeconds(90);
+        ProcessInventoryProcessingResult recovered = processor.Process(ProcessorSnapshot(
+            recoveredAt,
+            ProcessorEntry(100, parentStarted, recoveredAt, null, TimeSpan.FromSeconds(4), 4096, 8192, "Parent"),
+            ProcessorEntry(200, childStarted, recoveredAt, 100, TimeSpan.FromSeconds(5), 2048, 4096, "Child")));
+
+        Assert(recovered.Relationships.Count == 0,
+            "The first complete sample after a gap must not restore stale relationship confidence.");
+    }
+
+    private static void TestProcessorResetsMissingCpuBaseline()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        DateTimeOffset processStarted = start.AddMinutes(-2);
+        var processor = new ProcessInventorySampleProcessor(logicalProcessorCount: 1);
+
+        _ = processor.Process(ProcessorSnapshot(
+            start,
+            ProcessorEntry(300, processStarted, start, null, TimeSpan.FromSeconds(1), 1000, 2000, "Worker")));
+
+        DateTimeOffset missingAt = start.AddSeconds(30);
+        ProcessInventoryProcessingResult missing = processor.Process(ProcessorSnapshot(
+            missingAt,
+            ProcessorEntry(300, processStarted, missingAt, null, null, 1000, 2000, "Worker")));
+        Assert(missing.PerformanceSamples.Single().CpuPercent is null,
+            "A missing cumulative CPU value must remain unavailable.");
+
+        DateTimeOffset restoredAt = start.AddSeconds(60);
+        ProcessInventoryProcessingResult restored = processor.Process(ProcessorSnapshot(
+            restoredAt,
+            ProcessorEntry(300, processStarted, restoredAt, null, TimeSpan.FromSeconds(10), 1000, 2000, "Worker")));
+        Assert(restored.PerformanceSamples.Single().CpuPercent is null,
+            "The first CPU value after a gap must establish a new baseline rather than bridge the gap.");
+
+        DateTimeOffset nextAt = start.AddSeconds(90);
+        ProcessInventoryProcessingResult next = processor.Process(ProcessorSnapshot(
+            nextAt,
+            ProcessorEntry(300, processStarted, nextAt, null, TimeSpan.FromSeconds(11), 1000, 2000, "Worker")));
+        Assert(next.PerformanceSamples.Single().CpuPercent.HasValue,
+            "A second consecutive CPU value after recovery should produce a valid delta.");
+    }
+
+    private static void TestProcessorPidReuseResetsCpuHistory()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        var processor = new ProcessInventorySampleProcessor(logicalProcessorCount: 1);
+        DateTimeOffset originalStarted = start.AddMinutes(-2);
+
+        _ = processor.Process(ProcessorSnapshot(
+            start,
+            ProcessorEntry(400, originalStarted, start, null, TimeSpan.FromSeconds(20), 1000, 2000, "Worker")));
+
+        DateTimeOffset reusedAt = start.AddSeconds(30);
+        DateTimeOffset replacementStarted = reusedAt.AddSeconds(-1);
+        ProcessInventoryProcessingResult replacement = processor.Process(ProcessorSnapshot(
+            reusedAt,
+            ProcessorEntry(400, replacementStarted, reusedAt, null, TimeSpan.FromSeconds(1), 1000, 2000, "Worker")));
+
+        Assert(replacement.PerformanceSamples.Single().CpuPercent is null,
+            "A new process identity reusing a PID must not inherit the old process CPU baseline.");
+
+        DateTimeOffset nextAt = start.AddSeconds(60);
+        ProcessInventoryProcessingResult next = processor.Process(ProcessorSnapshot(
+            nextAt,
+            ProcessorEntry(400, replacementStarted, nextAt, null, TimeSpan.FromSeconds(2), 1000, 2000, "Worker")));
+
+        Assert(next.PerformanceSamples.Single().CpuPercent.HasValue,
+            "The replacement process should establish its own CPU history after a second sample.");
+    }
+
+    private static ProcessInventorySnapshot ProcessorSnapshot(
+        DateTimeOffset capturedAt,
+        params ProcessInventoryEntry[] entries) =>
+        new(
+            capturedAt,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Complete,
+            entries);
+
+    private static ProcessInventoryEntry ProcessorEntry(
+        int processId,
+        DateTimeOffset startedAt,
+        DateTimeOffset capturedAt,
+        int? parentProcessId,
+        TimeSpan? totalCpuTime,
+        ulong workingSet,
+        ulong privateBytes,
+        string name) =>
+        new(
+            ProcessId: processId,
+            Identity: new ProcessIdentity(processId, startedAt),
+            Name: name,
+            ParentProcessId: parentProcessId,
+            ParentMetadataAvailable: true,
+            WorkingSetBytes: workingSet,
+            PrivateBytes: privateBytes,
+            TotalCpuTime: totalCpuTime,
+            CapturedAt: capturedAt);
 
     private static void TestEntryParentMetadataUnavailable()
     {

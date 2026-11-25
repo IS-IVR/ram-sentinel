@@ -11,16 +11,15 @@ internal sealed class MainForm : Form
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
     private readonly WindowsProcessInventoryProvider _processInventoryProvider = new();
-    private readonly ProcessRelationshipTracker _processRelationshipTracker = new();
+    private readonly ProcessInventorySampleProcessor _processSampleProcessor =
+        new(Math.Max(1, Environment.ProcessorCount));
     private readonly DiagnosticsEngine _diagnosticsEngine = new();
     private readonly PerformanceSampleHistory _diagnosticHistory = new();
     private readonly DiagnosticsSummaryView _diagnosticsView = new();
-    private readonly Dictionary<ProcessIdentity, ProcessCpuSample> _processCpuSamples = new();
     private IReadOnlyList<ProcessPerformanceSample> _lastProcessSamples = Array.Empty<ProcessPerformanceSample>();
     private DateTimeOffset _lastDiagnosticSampleAt = DateTimeOffset.MinValue;
     private double? _latestCpuPercent;
     private static readonly TimeSpan DiagnosticSampleInterval = TimeSpan.FromSeconds(30);
-    private readonly int _logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 30_000 };
     private readonly NotifyIcon _notifyIcon;
     private readonly Label _statusLabel = new();
@@ -447,7 +446,7 @@ internal sealed class MainForm : Form
             System.ComponentModel.Win32Exception or
             NotSupportedException)
         {
-            _processCpuSamples.Clear();
+            _processSampleProcessor.Clear();
             inventory = new ProcessInventorySnapshot(
                 CapturedAt: sampledAt,
                 EnumerationStatus: ProcessEnumerationStatus.Failed,
@@ -456,94 +455,21 @@ internal sealed class MainForm : Form
                 FailureReason: $"איסוף נתוני התהליכים נכשל: {exception.Message}");
         }
 
-        if (inventory.CanAdvanceRelationships)
+        ProcessInventoryProcessingResult processed = _processSampleProcessor.Process(inventory);
+        if (processed.RelationshipsAdvanced)
         {
-            ProcessLifecycleObservation[] lifecycleObservations = inventory.Entries
-                .Select(entry => new ProcessLifecycleObservation(
-                    Identity: entry.Identity!,
-                    Name: entry.Name,
-                    ParentProcessId: entry.ParentProcessId,
-                    CapturedAt: inventory.CapturedAt,
-                    WorkingSetBytes: entry.WorkingSetBytes,
-                    PrivateBytes: entry.PrivateBytes,
-                    TotalCpuTime: entry.TotalCpuTime,
-                    ReadOperationCount: entry.ReadOperationCount,
-                    WriteOperationCount: entry.WriteOperationCount,
-                    ReadTransferBytes: entry.ReadTransferBytes,
-                    WriteTransferBytes: entry.WriteTransferBytes))
-                .ToArray();
-
-            _processRelationshipTracker.Observe(inventory.CapturedAt, lifecycleObservations);
             _explanationLabel.Text = "האבחון קורא מדדים בלבד. לא מתבצעים שינויים אוטומטיים במחשב.";
         }
         else
         {
-            // Never keep stale relationship confidence after an incomplete inventory.
-            _processRelationshipTracker.Clear();
             _explanationLabel.Text =
-                $"מעקב קשרי תהליכים מושהה: {inventory.FailureReason ?? "נתוני האיסוף אינם מלאים."}";
+                $"מעקב קשרי תהליכים מושהה: {processed.RelationshipPauseReason}";
         }
 
-        var rows = new List<ProcessRow>();
-        var activeProcessIdentities = new HashSet<ProcessIdentity>();
-
-        foreach (ProcessInventoryEntry entry in inventory.Entries)
-        {
-            if (entry.ProcessId <= 0)
-            {
-                continue;
-            }
-
-            ProcessIdentity? identity = entry.Identity;
-            DateTime? startedAtUtc = identity?.StartedAtUtc.UtcDateTime;
-            double? cpuPercent = null;
-
-            if (identity is not null)
-            {
-                activeProcessIdentities.Add(identity);
-
-                if (entry.TotalCpuTime is TimeSpan totalCpuTime)
-                {
-                    if (_processCpuSamples.TryGetValue(identity, out ProcessCpuSample? previous) &&
-                        previous is not null)
-                    {
-                        cpuPercent = CpuUsageCalculator.Calculate(
-                            previous.TotalCpuTime,
-                            totalCpuTime,
-                            sampledAt - previous.SampledAt,
-                            _logicalProcessorCount);
-                    }
-
-                    _processCpuSamples[identity] = new ProcessCpuSample(totalCpuTime, sampledAt);
-                }
-                else
-                {
-                    // A gap in cumulative CPU data must not be bridged by a later delta.
-                    _processCpuSamples.Remove(identity);
-                }
-            }
-
-            rows.Add(new ProcessRow(
-                entry.ProcessId,
-                entry.Name,
-                entry.WorkingSetBytes,
-                entry.PrivateBytes,
-                cpuPercent,
-                startedAtUtc));
-        }
-
-        // Remove samples for exited or PID-reused processes so history stays bounded.
-        foreach (ProcessIdentity identity in _processCpuSamples.Keys
-                     .Where(identity => !activeProcessIdentities.Contains(identity))
-                     .ToArray())
-        {
-            _processCpuSamples.Remove(identity);
-        }
-
-        List<ProcessRow> visibleRows = rows
+        List<ProcessInventoryRow> visibleRows = processed.Rows
             .OrderByDescending(row => row.WorkingSetBytes ?? 0)
             .Take(15)
-            .Concat(rows.OrderByDescending(row => row.CpuPercent ?? 0d).Take(10))
+            .Concat(processed.Rows.OrderByDescending(row => row.CpuPercent ?? 0d).Take(10))
             .GroupBy(row => row.ProcessId)
             .Select(group => group.First())
             .OrderByDescending(row => row.CpuPercent ?? 0d)
@@ -555,7 +481,7 @@ internal sealed class MainForm : Form
         try
         {
             _processList.Items.Clear();
-            foreach (ProcessRow row in visibleRows)
+            foreach (ProcessInventoryRow row in visibleRows)
             {
                 var item = new ListViewItem(row.Name ?? "לא זמין") { Tag = row };
                 item.SubItems.Add(row.ProcessId.ToString());
@@ -575,20 +501,13 @@ internal sealed class MainForm : Form
         }
 
         _closeSelectedButton.Enabled = _processList.SelectedItems.Count == 1;
-
-        return rows.Select(row => new ProcessPerformanceSample(
-            ProcessId: row.ProcessId,
-            Name: row.Name ?? "לא זמין",
-            CpuPercent: row.CpuPercent,
-            WorkingSetBytes: row.WorkingSetBytes,
-            PrivateBytes: row.PrivateBytes,
-            StartedAtUtc: row.StartTimeUtc)).ToArray();
+        return processed.PerformanceSamples;
     }
 
     private void CloseSelectedApplication()
     {
         if (_processList.SelectedItems.Count != 1 ||
-            _processList.SelectedItems[0].Tag is not ProcessRow row)
+            _processList.SelectedItems[0].Tag is not ProcessInventoryRow row)
         {
             return;
         }
@@ -775,15 +694,4 @@ internal sealed class MainForm : Form
         return $"{value:0.0} {units[unit]}";
     }
 
-    private sealed record ProcessCpuSample(
-        TimeSpan TotalCpuTime,
-        DateTimeOffset SampledAt);
-
-    private sealed record ProcessRow(
-        int ProcessId,
-        string? Name,
-        ulong? WorkingSetBytes,
-        ulong? PrivateBytes,
-        double? CpuPercent,
-        DateTime? StartTimeUtc);
 }
