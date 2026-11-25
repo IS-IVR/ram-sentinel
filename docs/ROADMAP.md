@@ -58,8 +58,12 @@
 - [ ] 24-hour soak test.
 - [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
 - [ ] תקציב CPU/RAM עצמי.
-- [ ] Installer, Uninstaller, Signing ו-Update.
-- [ ] פרסום רק עם תוצאות Benchmark משוחזרות.
+- [x] מתקין x64 למשתמש הנוכחי, Uninstaller וגרסת Portable הוגדרו ב-PR #11; קומפילציה ויצירת החבילות אומתו ב-Windows CI.
+- [x] Workflow ל-GitHub Release מתגיות גרסה בלבד, SHA-256 והעלאת נכסים; התג חייב להצביע ל-commit שנמצא ב-main.
+- [x] בדיקת התקנה/הסרה שקטה למשתמש הנוכחי, אימות Hash של הקובץ המותקן ואימות רישום/הסרת Uninstaller נוספו ל-Workflow וימתינו להרצה בתג הראשון.
+- [ ] יצירת Release רשמי ראשון לאחר מיזוג PR #8 ו-PR #11, בדיקת UI ידנית ובדיקת Soak של 30 דקות.
+- [ ] חתימת קוד Authenticode ומנגנון עדכון.
+
 
 ## M6 - Smart Application Lifecycle Manager
 
