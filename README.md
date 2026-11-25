@@ -21,6 +21,8 @@
 
 ההפצות הרשמיות יופיעו בעמוד [GitHub Releases](https://github.com/IS-IVR/ram-sentinel/releases) לאחר יצירת גרסה רשמית. ההפצה מתוכננת לכלול מתקין למשתמש הנוכחי, גרסה ניידת (Portable) וקובץ בדיקת SHA-256.
 
+קישור התקנה קבוע לשיתוף לאחר הפיכת המאגר לציבורי ופרסום Release ראשון: [הורדת RAM Sentinel ל-Windows x64](https://github.com/IS-IVR/ram-sentinel/releases/latest/download/RAM-Sentinel-Setup-win-x64.exe).
+
 המאגר פרטי כרגע ולכן לא מוצג תג הורדות ציבורי. GitHub שומר לכל נכס Release שדה `download_count`, שניתן לקרוא דרך GitHub API בהרשאה מתאימה. הספירה מתייחסת להורדות נכסים, ולא למשתמשים ייחודיים, להתקנות פעילות, לשיבוטים (clones) או להורדות זמניות של GitHub Actions. כרגע עדיין לא פורסמה גרסה רשמית.
 
 מפרט ההתקנה והפרסום: [docs/RELEASES_AND_INSTALLER.md](docs/RELEASES_AND_INSTALLER.md).
