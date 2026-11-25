@@ -34,7 +34,25 @@ jobs:
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
-          if ($tag -notmatch '^v\d+\.\d+\.\d+
+          $versionParts = $tag.Substring(1).Split('.')
+          if ($versionParts.Count -ne 3) {
+            throw "Release tags must use exactly vMAJOR.MINOR.PATCH, for example v1.2.3."
+          }
+          foreach ($part in $versionParts) {
+            if ($part.Length -eq 0 -or $part -match '[^0-9]') {
+              throw "Release tags must use exactly vMAJOR.MINOR.PATCH, for example v1.2.3."
+            }
+          }
+
+          git fetch origin main:refs/remotes/origin/main --no-tags
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch the current main branch for release validation."
+          }
+
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Refusing to build release packages: the tagged commit is not reachable from main."
+          }
 
       - name: Build
         run: dotnet build .\ram-sentinel.sln --configuration Release --no-restore
