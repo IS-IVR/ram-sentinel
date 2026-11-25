@@ -8,9 +8,10 @@
 
 ## הורדה והפעלה
 
-1. הורד את הארטיפקט `ram-sentinel-inventory-soak-win-x64` מתוך GitHub Actions של הפרויקט.
-2. חלץ את קובץ ה-ZIP לתיקייה רגילה.
-3. פתח CMD באותה תיקייה והרץ:
+הורד את הארטיפקט המוכן: [ram-sentinel-inventory-soak-win-x64 (GitHub Actions #76)](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609176862/artifacts/15018128578). זהו ZIP של כלי עצמאי ל-Windows x64.
+
+1. חלץ את קובץ ה-ZIP לתיקייה רגילה.
+2. פתח CMD באותה תיקייה והרץ:
 
 ```cmd
 RamSentinel.InventorySoak.exe --duration-minutes 30 --interval-seconds 30 --output "%USERPROFILE%\Desktop\ram-sentinel-soak.csv"

@@ -1,6 +1,8 @@
 # Shared Process Inventory Integration
 
-Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, UI-neutral process-sample orchestration, and a standalone low-resource soak harness implemented. Windows CI run #73 passed, including the soak harness smoke check and standalone x64 publish. A follow-up safeguard now prevents duplicate/out-of-order samples from clearing the last accepted process table or diagnostic sample; CI run #75 is validating that change. Real soak execution on a weak target machine remains open.
+Status: shared inventory, Toolhelp state machine, process-property reader, Windows provider smoke test, UI-neutral process-sample orchestration, stale-sample UI preservation, and a standalone low-resource soak harness implemented. Windows CI run [#76](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609176862) passed for branch head `53e84499084115ba8221862fce11c16d2fb96f06`, including Core checks, Windows provider integration, the one-shot soak smoke check, standalone x64 app/tool publishing, and both artifact uploads. Real 30-minute execution on a weak target machine and manual UI validation remain open.
+
+Latest artifacts: [RAM Sentinel x64](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609176862/artifacts/15018559153) · [Inventory soak tool x64](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609176862/artifacts/15018128578).
 
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8).
 
@@ -17,6 +19,7 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - `ProcessInventorySampleProcessor` is the UI-neutral orchestration layer for one immutable inventory. It produces process-list rows, diagnostic `ProcessPerformanceSample` values, and lifecycle relationship evidence from the same source object and timestamp.
 - `MainForm` passes the same timestamp used by the system RAM/CPU/disk sample into the process collector. The list, CPU history, diagnostic sample, and lifecycle tracker do not trigger another process enumeration.
 - CPU history is keyed by `ProcessIdentity` (PID + UTC creation time); a missing cumulative CPU observation resets its baseline. Duplicate and out-of-order samples are rejected before producing any derived rows, CPU values, or relationship evidence, so stale data cannot replace the current table or a newer baseline.
+- Duplicate/out-of-order results expose `IsAccepted = false`; `MainForm` preserves the last accepted process table and diagnostic samples rather than clearing them.
 - Toolhelp metadata distinguishes complete, partial, and unavailable snapshots through the Core `ProcessParentSnapshotCapture` state machine. The Windows adapter supplies native callbacks.
 - `Process32First` unexpected failures, `Process32Next` unexpected terminal errors, duplicate PID entries, and close failures are never reported as complete snapshots.
 - A valid empty Toolhelp snapshot is distinct from snapshot creation or enumeration failure.
@@ -42,7 +45,7 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - [x] Windows CI run #64 passed for commit `92216f33451943660df8a37e1b256e1606c99750`: Restore, Build, Windows provider integration check, standalone x64 publish, and artifact upload.
 - [x] Windows CI run #68 passed for commit `4fa7b819f405f482bb95826e70f07906eb05b884`: Restore, Build, 62/62 Core checks, Windows provider integration check, standalone x64 publish, and artifact upload.
 - [x] Windows CI run [#73](https://github.com/IS-IVR/ram-sentinel/actions/runs/45607088929) passed for commit `ad0375a18542557d983df63b6b435436b2bfcc52`: Build, Core checks, Windows provider integration, one-shot soak harness smoke check, standalone x64 app publish, standalone x64 soak-tool publish, and both artifact uploads.
-- [ ] Windows CI run [#75](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609054408) validates the follow-up stale-sample UI-preservation change; do not mark this validation complete until the run succeeds.
+- [x] Windows CI run [#76](https://github.com/IS-IVR/ram-sentinel/actions/runs/45609176862) passed for commit `53e84499084115ba8221862fce11c16d2fb96f06`: Build, Core checks, Windows provider integration, one-shot soak harness smoke check, standalone x64 app publish, standalone x64 soak-tool publish, and both artifact uploads.
 
 ## Remaining validation
 
