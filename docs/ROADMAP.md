@@ -74,7 +74,7 @@
 - [ ] Foreground-window event tracking ללא איסוף כותרות חלונות או קלט משתמש.
 - [x] בדיקת אינטגרציה אוטומטית ב-Windows CI ל-Provider, למאפייני התהליך ולצילום Toolhelp מול התהליך הנוכחי.
 - [x] בדיקות Core ל-ProcessInventorySampleProcessor: רשימת תהליכים, דגימות אבחון וקשרי Lifecycle נוצרים מאותו snapshot ומאותו timestamp.
-- [x] התעלמות מדגימות כפולות/ישנות בלי לשנות בסיס CPU או לקדם קשרי Lifecycle.
+- [x] דחיית דגימות כפולות/ישנות לפני הפקת שורות תהליכים, מדדי CPU או קשרי Lifecycle.
 - [ ] בדיקת UI בפועל ב-Windows לתצוגת דגימות מלאות, חלקיות וישנות.
 - [ ] בדיקת עומס ממושכת במחשב Windows חלש, כולל מדידת CPU/RAM/זמן איסוף ובדיקת starvation של דגימות לא שלמות.
 
