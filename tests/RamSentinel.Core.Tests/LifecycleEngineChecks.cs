@@ -23,7 +23,14 @@ internal static class LifecycleEngineChecks
         ("An inventory failure reason blocks relationship tracking", TestFailureReasonBlocksTracking),
         ("An invalid parent PID blocks relationship tracking", TestInvalidParentPidBlocksTracking),
         ("A parent cannot start after its child", TestParentCreatedAfterChild),
-        ("A future process creation time blocks relationship tracking", TestFutureProcessIdentity)
+        ("A future process creation time blocks relationship tracking", TestFutureProcessIdentity),
+        ("Toolhelp creation failure is unavailable", TestParentSnapshotCreationFailure),
+        ("Toolhelp first-entry failure is unavailable", TestParentSnapshotFirstEntryFailure),
+        ("An empty Toolhelp snapshot is a successful empty result", TestParentSnapshotEmpty),
+        ("A mid-enumeration Toolhelp error is partial", TestParentSnapshotMidEnumerationFailure),
+        ("A normal Toolhelp end-of-list is complete", TestParentSnapshotNormalEnd),
+        ("A Toolhelp close failure downgrades completeness", TestParentSnapshotCloseFailure),
+        ("Duplicate Toolhelp PIDs downgrade completeness", TestParentSnapshotDuplicatePid)
     ];
 
     private static void TestRepeatedObservation()
@@ -316,6 +323,141 @@ internal static class LifecycleEngineChecks
 
         Assert(!snapshot.CanAdvanceRelationships,
             "A process creation timestamp after the sample timestamp is invalid.");
+    }
+
+    private static void TestParentSnapshotCreationFailure()
+    {
+        int firstCalls = 0;
+        int closeCalls = 0;
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(false, 0, 5),
+            first: _ =>
+            {
+                firstCalls++;
+                return new ProcessParentSnapshotEntryResult(false, ErrorCode: 18);
+            },
+            next: _ => throw new InvalidOperationException("Next must not be called."),
+            close: _ =>
+            {
+                closeCalls++;
+                return new ProcessParentSnapshotCloseResult(true);
+            },
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Unavailable,
+            "A failed snapshot creation must be unavailable.");
+        Assert(result.ParentIds.Count == 0 && result.FailureReason is not null,
+            "Creation failure must not look like a successful empty result.");
+        Assert(firstCalls == 0 && closeCalls == 0,
+            "No enumeration or close callback is valid when creation did not return a handle.");
+    }
+
+    private static void TestParentSnapshotFirstEntryFailure()
+    {
+        int closeCalls = 0;
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 10),
+            first: _ => new ProcessParentSnapshotEntryResult(false, ErrorCode: 5),
+            next: _ => throw new InvalidOperationException("Next must not be called."),
+            close: _ =>
+            {
+                closeCalls++;
+                return new ProcessParentSnapshotCloseResult(true);
+            },
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Unavailable,
+            "An unexpected Process32First failure must not be treated as an empty snapshot.");
+        Assert(closeCalls == 1, "A successfully created snapshot handle must be closed exactly once.");
+    }
+
+    private static void TestParentSnapshotEmpty()
+    {
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 11),
+            first: _ => new ProcessParentSnapshotEntryResult(false, ErrorCode: 18),
+            next: _ => throw new InvalidOperationException("Next must not be called."),
+            close: _ => new ProcessParentSnapshotCloseResult(true),
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Complete,
+            "ERROR_NO_MORE_FILES from the first call represents a valid empty snapshot.");
+        Assert(result.ParentIds.Count == 0 && result.FailureReason is null,
+            "A valid empty snapshot must remain distinct from failure.");
+    }
+
+    private static void TestParentSnapshotMidEnumerationFailure()
+    {
+        int nextCalls = 0;
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 12),
+            first: _ => new ProcessParentSnapshotEntryResult(true, 100, null),
+            next: _ =>
+            {
+                nextCalls++;
+                return nextCalls == 1
+                    ? new ProcessParentSnapshotEntryResult(true, 200, 100)
+                    : new ProcessParentSnapshotEntryResult(false, ErrorCode: 5);
+            },
+            close: _ => new ProcessParentSnapshotCloseResult(true),
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Partial,
+            "A non-end-of-list terminal error must mark the snapshot partial.");
+        Assert(result.ParentIds.Count == 2 && result.ParentIds[200] == 100,
+            "Entries read before the failure may be retained as partial evidence, not as complete evidence.");
+        Assert(result.FailureReason is not null,
+            "A partial enumeration must retain a diagnostic reason.");
+    }
+
+    private static void TestParentSnapshotNormalEnd()
+    {
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 13),
+            first: _ => new ProcessParentSnapshotEntryResult(true, 300, null),
+            next: _ => new ProcessParentSnapshotEntryResult(false, ErrorCode: 18),
+            close: _ => new ProcessParentSnapshotCloseResult(true),
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Complete,
+            "ERROR_NO_MORE_FILES after the final entry represents a complete snapshot.");
+        Assert(result.ParentIds.TryGetValue(300, out int? parent) && parent is null,
+            "A known root process must preserve its known-null parent entry.");
+    }
+
+    private static void TestParentSnapshotCloseFailure()
+    {
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 14),
+            first: _ => new ProcessParentSnapshotEntryResult(false, ErrorCode: 18),
+            next: _ => throw new InvalidOperationException("Next must not be called."),
+            close: _ => new ProcessParentSnapshotCloseResult(false, 6),
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Partial,
+            "A snapshot handle close failure must prevent a complete status.");
+        Assert(result.FailureReason is not null,
+            "A close failure must remain diagnosable.");
+    }
+
+    private static void TestParentSnapshotDuplicatePid()
+    {
+        int nextCalls = 0;
+        ProcessParentSnapshotResult result = ProcessParentSnapshotCapture.Capture<int>(
+            create: () => new ProcessParentSnapshotCreation<int>(true, 15),
+            first: _ => new ProcessParentSnapshotEntryResult(true, 400, null),
+            next: _ =>
+            {
+                nextCalls++;
+                return nextCalls == 1
+                    ? new ProcessParentSnapshotEntryResult(true, 400, 200)
+                    : new ProcessParentSnapshotEntryResult(false, ErrorCode: 18);
+            },
+            close: _ => new ProcessParentSnapshotCloseResult(true),
+            endOfEnumerationErrorCode: 18);
+
+        Assert(result.Status == ParentMetadataStatus.Partial,
+            "A duplicate PID in a native snapshot must never be reported as complete.");
     }
 
     private static void TestEntryParentMetadataUnavailable()

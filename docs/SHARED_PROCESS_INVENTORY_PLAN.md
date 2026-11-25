@@ -14,7 +14,8 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - Each process property used by the sample (PID, creation time, name, working set, private bytes, cumulative CPU time) is captured once. UI rows and CPU history use those captured values rather than reading the live process again.
 - Missing creation time remains a null identity. Missing process metrics remain null and are displayed as unavailable, never as zero.
 - CPU history is keyed by `ProcessIdentity` (PID + creation time). A missing cumulative CPU observation resets that identity's delta baseline.
-- Toolhelp metadata distinguishes complete, partial, and unavailable snapshots. `Process32First` failures are checked, and `Process32Next` must end with `ERROR_NO_MORE_FILES` to be considered complete.
+- Toolhelp metadata distinguishes complete, partial, and unavailable snapshots through the Core `ProcessParentSnapshotCapture` state machine. The Windows P/Invoke adapter supplies native callbacks; the Core state machine is deterministic and fakeable.
+- `Process32First` unexpected failures, `Process32Next` unexpected terminal errors, duplicate PID entries, and close failures are represented as unavailable/partial, never as complete.
 - A successful empty Toolhelp snapshot is distinct from snapshot creation or enumeration failure.
 - A PID absent from an otherwise complete Toolhelp snapshot makes parent metadata partial; it is not assigned a guessed parent.
 - The Core inventory gate rejects failed enumeration, incomplete parent metadata, missing or mismatched identities, future creation times, mismatched timestamps, unavailable per-entry parent metadata, invalid parent PIDs, failure reasons, and duplicate PIDs.
@@ -29,16 +30,19 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - The owned-snapshot helper calls the enumerator exactly once.
 - Every item is disposed exactly once after a successful capture.
 - Every item is disposed exactly once when the capture callback throws, and the original capture exception is rethrown.
-- Existing Core checks cover failed enumeration, partial parent metadata, missing identity, empty successful inventory, PID mismatch, timestamp mismatch, unavailable parent metadata, and duplicate PIDs.
+- Existing Core checks cover failed process enumeration, partial parent metadata, missing identity, empty successful inventory, PID mismatch, timestamp mismatch, unavailable parent metadata, and duplicate PIDs.
+- Added deterministic callback-driven tests for Toolhelp creation failure, unexpected first-entry failure, valid empty snapshot, mid-enumeration failure, normal end-of-list, close failure, and duplicate native PIDs.
 - Snapshot gating also rejects non-empty failure reasons, invalid non-null parent PIDs, and process creation timestamps later than the inventory capture.
 - Relationship tracking rejects a proposed parent whose process creation time is later than the child's, even across repeated samples.
 - Windows CI run #56 passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`: restore, build, all Core checks, standalone x64 publish, and artifact upload.
-- The current Core tests do not yet directly execute the Windows P/Invoke provider; provider-specific injection seams and deterministic Toolhelp failure tests remain outstanding.
+- Toolhelp control flow is now covered by a platform-independent callback state machine in Core. The actual Win32 P/Invoke marshalling adapter and per-property Windows process reader are still not directly exercised by the Core tests.
 
 ## Remaining validation
 
 - [x] Windows CI passes for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001` (run #56).
-- [ ] Add injectable Toolhelp and process-property capture seams; test snapshot creation failure, Process32First failure, mid-enumeration failure, and property-read failures deterministically.
+- [x] Extract Toolhelp snapshot-state handling into an injectable Core callback state machine and add deterministic tests for creation, first-entry, mid-enumeration, end-of-list, close, and duplicate-PID cases.
+- [ ] Add a deterministic property-reader seam proving each Process property is sampled once and inaccessible/closed-process cases preserve null values.
+- [ ] Review the thin Windows P/Invoke adapter on a real Windows host; the callback state machine is tested, but the P/Invoke marshalling itself is not mocked in Core tests.
 - [ ] Add a Windows integration test proving all UI/CPU/lifecycle consumers reuse the same immutable entry and timestamp.
 - [ ] Review the final PR diff after provider-specific tests are added.
 - [ ] Run on a real Windows machine with low available RAM and a large process count; record collector CPU, memory, and elapsed-time overhead.

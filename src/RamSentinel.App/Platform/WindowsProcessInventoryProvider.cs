@@ -18,7 +18,7 @@ internal sealed class WindowsProcessInventoryProvider
         ArgumentNullException.ThrowIfNull(processes);
 
         DateTimeOffset timestamp = capturedAt.ToUniversalTime();
-        ParentProcessSnapshot parentSnapshot = ReadParentProcessIds();
+        ProcessParentSnapshotResult parentSnapshot = ReadParentProcessIds();
         var entries = new List<ProcessInventoryEntry>(processes.Count);
         var failureReasons = new List<string>();
         ProcessEnumerationStatus enumerationStatus = ProcessEnumerationStatus.Complete;
@@ -113,84 +113,73 @@ internal sealed class WindowsProcessInventoryProvider
                 : string.Join(" ", failureReasons.Distinct()));
     }
 
-    private static ParentProcessSnapshot ReadParentProcessIds()
+    private static ProcessParentSnapshotResult ReadParentProcessIds() =>
+        ProcessParentSnapshotCapture.Capture(
+            create: () =>
+            {
+                IntPtr handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+                int error = handle == IntPtr.Zero || handle == InvalidHandleValue
+                    ? Marshal.GetLastWin32Error()
+                    : 0;
+                return new ProcessParentSnapshotCreation<IntPtr>(
+                    handle != IntPtr.Zero && handle != InvalidHandleValue,
+                    handle,
+                    error);
+            },
+            first: ReadFirstParentEntry,
+            next: ReadNextParentEntry,
+            close: handle =>
+            {
+                bool succeeded = CloseHandle(handle);
+                int error = succeeded ? 0 : Marshal.GetLastWin32Error();
+                return new ProcessParentSnapshotCloseResult(succeeded, error);
+            },
+            endOfEnumerationErrorCode: ERROR_NO_MORE_FILES);
+
+    private static ProcessParentSnapshotEntryResult ReadFirstParentEntry(IntPtr snapshot)
     {
-        var parentIds = new Dictionary<int, int?>();
-        IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-
-        if (snapshot == IntPtr.Zero || snapshot == InvalidHandleValue)
+        var entry = new ProcessEntry32
         {
-            int error = Marshal.GetLastWin32Error();
-            return new ParentProcessSnapshot(
-                parentIds,
-                ParentMetadataStatus.Unavailable,
-                $"יצירת צילום תהליכי Windows נכשלה (Win32 {error}).");
+            Size = (uint)Marshal.SizeOf<ProcessEntry32>()
+        };
+
+        bool succeeded = Process32First(snapshot, ref entry);
+        if (!succeeded)
+        {
+            return new ProcessParentSnapshotEntryResult(
+                Succeeded: false,
+                ErrorCode: Marshal.GetLastWin32Error());
         }
 
-        ParentMetadataStatus status = ParentMetadataStatus.Unavailable;
-        string? failureReason = null;
+        return new ProcessParentSnapshotEntryResult(
+            Succeeded: true,
+            ProcessId: (int)entry.ProcessId,
+            ParentProcessId: entry.ParentProcessId > 0
+                ? (int)entry.ParentProcessId
+                : null);
+    }
 
-        try
+    private static ProcessParentSnapshotEntryResult ReadNextParentEntry(IntPtr snapshot)
+    {
+        var entry = new ProcessEntry32
         {
-            var entry = new ProcessEntry32
-            {
-                Size = (uint)Marshal.SizeOf<ProcessEntry32>()
-            };
+            Size = (uint)Marshal.SizeOf<ProcessEntry32>()
+        };
 
-            if (!Process32First(snapshot, ref entry))
-            {
-                int error = Marshal.GetLastWin32Error();
-                if (error == ERROR_NO_MORE_FILES)
-                {
-                    status = ParentMetadataStatus.Complete;
-                }
-                else
-                {
-                    status = ParentMetadataStatus.Unavailable;
-                    failureReason = $"קריאת Process32First נכשלה (Win32 {error}).";
-                }
-            }
-            else
-            {
-                do
-                {
-                    if (entry.ProcessId > 0)
-                    {
-                        parentIds[(int)entry.ProcessId] = entry.ParentProcessId > 0
-                            ? (int)entry.ParentProcessId
-                            : null;
-                    }
-
-                    entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
-                }
-                while (Process32Next(snapshot, ref entry));
-
-                int terminalError = Marshal.GetLastWin32Error();
-                if (terminalError == ERROR_NO_MORE_FILES)
-                {
-                    status = ParentMetadataStatus.Complete;
-                }
-                else
-                {
-                    status = ParentMetadataStatus.Partial;
-                    failureReason = $"סריקת מזהי ההורים נקטעה (Win32 {terminalError}).";
-                }
-            }
-        }
-        finally
+        bool succeeded = Process32Next(snapshot, ref entry);
+        if (!succeeded)
         {
-            if (!CloseHandle(snapshot))
-            {
-                int error = Marshal.GetLastWin32Error();
-                if (status == ParentMetadataStatus.Complete)
-                {
-                    status = ParentMetadataStatus.Partial;
-                    failureReason = $"סגירת צילום התהליכים נכשלה (Win32 {error}).";
-                }
-            }
+            return new ProcessParentSnapshotEntryResult(
+                Succeeded: false,
+                ErrorCode: Marshal.GetLastWin32Error());
         }
 
-        return new ParentProcessSnapshot(parentIds, status, failureReason);
+        return new ProcessParentSnapshotEntryResult(
+            Succeeded: true,
+            ProcessId: (int)entry.ProcessId,
+            ParentProcessId: entry.ParentProcessId > 0
+                ? (int)entry.ParentProcessId
+                : null);
     }
 
     private static IoCounters? TryReadIoCounters(int processId)
@@ -239,11 +228,6 @@ internal sealed class WindowsProcessInventoryProvider
     private const uint TH32CS_SNAPPROCESS = 0x00000002;
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     private const int ERROR_NO_MORE_FILES = 18;
-
-    private sealed record ParentProcessSnapshot(
-        IReadOnlyDictionary<int, int?> ParentIds,
-        ParentMetadataStatus Status,
-        string? FailureReason);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ProcessEntry32
