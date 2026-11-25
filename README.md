@@ -72,6 +72,11 @@ dotnet run --project .\tests\RamSentinel.Core.Tests\RamSentinel.Core.Tests.cspro
 - [ארכיטקטורה](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [פרטיות](docs/PRIVACY.md)
+- [התקנה, הפצה ומעקב הורדות](docs/INSTALLER_AND_RELEASES.md)
+
+## התקנה והפצה
+
+תשתית ההפצה מוגדרת בענף `feature/installer-release`: מתקין per-user ללא הרשאות מנהל, ZIP נייד, SHA-256 ו-Release אוטומטי שמופעל רק מתג גרסה על `main` לאחר בדיקות Windows. לא נוצר תג גרסה ולא פורסמה גרסה בפועל. הוראות, מגבלות חתימה ובדיקת מספר הורדות: [docs/INSTALLER_AND_RELEASES.md](docs/INSTALLER_AND_RELEASES.md).
 
 ## Smart Application Lifecycle Manager
 
