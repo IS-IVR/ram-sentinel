@@ -10,6 +10,8 @@ internal sealed class MainForm : Form
     private readonly WindowsDiskMetricsProvider _diskMetricsProvider = new();
     private readonly StartupInventoryProvider _startupInventoryProvider = new();
     private readonly WindowsCpuUsageProvider _cpuUsageProvider = new();
+    private readonly WindowsProcessInventoryProvider _processInventoryProvider = new();
+    private readonly ProcessRelationshipTracker _processRelationshipTracker = new();
     private readonly DiagnosticsEngine _diagnosticsEngine = new();
     private readonly PerformanceSampleHistory _diagnosticHistory = new();
     private readonly DiagnosticsSummaryView _diagnosticsView = new();
@@ -431,12 +433,22 @@ internal sealed class MainForm : Form
     private IReadOnlyList<ProcessPerformanceSample> RefreshProcessList()
     {
         DateTimeOffset sampledAt = DateTimeOffset.UtcNow;
+        Process[] processes = Process.GetProcesses();
         var rows = new List<ProcessRow>();
         var activeProcessIds = new HashSet<int>();
 
-        foreach (Process process in Process.GetProcesses())
+        try
         {
-            using (process)
+            IReadOnlyList<ProcessLifecycleObservation> lifecycleObservations =
+                _processInventoryProvider.ReadAll(processes, sampledAt);
+
+            // A partial inventory must not increase relationship confidence.
+            if (lifecycleObservations.Count == processes.Length)
+            {
+                _processRelationshipTracker.Observe(sampledAt, lifecycleObservations);
+            }
+
+            foreach (Process process in processes)
             {
                 try
                 {
@@ -488,6 +500,14 @@ internal sealed class MainForm : Form
                 }
             }
         }
+        finally
+        {
+            // MainForm owns the one process snapshot and disposes every handle once.
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
+        }
 
         // Remove samples for exited processes so the dictionary remains bounded.
         foreach (int processId in _processCpuSamples.Keys.Where(id => !activeProcessIds.Contains(id)).ToArray())
@@ -495,8 +515,6 @@ internal sealed class MainForm : Form
             _processCpuSamples.Remove(processId);
         }
 
-        // Show both memory-heavy and CPU-heavy processes. A small but busy process
-        // must not disappear simply because its RAM use is modest.
         List<ProcessRow> visibleRows = rows
             .OrderByDescending(x => x.WorkingSetBytes)
             .Take(15)
