@@ -58,8 +58,9 @@
 - [ ] 24-hour soak test.
 - [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
 - [ ] תקציב CPU/RAM עצמי.
-- [ ] Installer, Uninstaller, Signing ו-Update.
-- [ ] פרסום רק עם תוצאות Benchmark משוחזרות.
+- [x] בניית מתקין x64 למשתמש הנוכחי, הסרה רגילה וגרסת Portable.
+- [x] GitHub Release אוטומטי רק בעקבות תגית גרסה, כולל SHA-256 ומונה הורדות של נכסי Release. טרם פורסמה גרסה רשמית.
+- [ ] חתימת קוד Authenticode ומנגנון עדכון.
 
 ## M6 - Smart Application Lifecycle Manager
 
