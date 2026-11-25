@@ -65,7 +65,8 @@ jobs:
           dotnet run --project ./tools/RamSentinel.InventorySoak/RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
 
       - name: Publish self-contained x64 application
-        run: dotnet publish ./src/RamSentinel.App/RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ env.APP_VERSION }} --output ./artifacts/win-x64
+        shell: pwsh
+        run: dotnet publish ./src/RamSentinel.App/RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true "-p:Version=$env:APP_VERSION" --output ./artifacts/win-x64
 
       - name: Verify published executable
         shell: pwsh
