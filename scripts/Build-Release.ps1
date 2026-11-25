@@ -36,7 +36,12 @@ if (-not (Test-Path -LiteralPath $appExecutable -PathType Leaf)) {
     throw "Published application executable was not found: $appExecutable"
 }
 
-$compiler = (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue)?.Source
+$compilerCommand = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
+$compiler = $null
+if ($compilerCommand) {
+    $compiler = $compilerCommand.Source
+}
+
 if (-not $compiler) {
     $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
     if ($programFilesX86) {
