@@ -6,81 +6,123 @@ using RamSentinel.Core;
 namespace RamSentinel.App.Platform;
 
 /// <summary>
-/// Captures one read-only process inventory pass for lifecycle analysis.
-/// Parent PIDs come from one Toolhelp snapshot; per-process metrics are best-effort.
-/// No command lines, window captions, document names, or user input are collected.
+/// Captures one immutable, read-only inventory from caller-owned Process instances.
+/// The caller owns enumeration and disposal. Every process property is read at most once.
 /// </summary>
 internal sealed class WindowsProcessInventoryProvider
 {
-    public IReadOnlyList<ProcessLifecycleObservation> ReadAll(
+    public ProcessInventorySnapshot ReadAll(
         IReadOnlyList<Process> processes,
         DateTimeOffset capturedAt)
     {
         ArgumentNullException.ThrowIfNull(processes);
+
         DateTimeOffset timestamp = capturedAt.ToUniversalTime();
-        IReadOnlyDictionary<int, int> parentIds = ReadParentProcessIds();
-        var observations = new List<ProcessLifecycleObservation>();
+        ParentProcessSnapshot parentSnapshot = ReadParentProcessIds();
+        var entries = new List<ProcessInventoryEntry>(processes.Count);
+        var failureReasons = new List<string>();
+        ProcessEnumerationStatus enumerationStatus = ProcessEnumerationStatus.Complete;
+        ParentMetadataStatus parentStatus = parentSnapshot.Status;
+
+        if (parentSnapshot.FailureReason is not null)
+        {
+            failureReasons.Add(parentSnapshot.FailureReason);
+        }
 
         foreach (Process process in processes)
         {
+            int processId;
             try
             {
-                int processId = process.Id;
-                if (processId <= 0)
-                {
-                    continue;
-                }
-
-                DateTimeOffset? startedAt = TryRead(() =>
-                    new DateTimeOffset(process.StartTime.ToUniversalTime()));
-
-                if (startedAt is null)
-                {
-                    // Without a creation time, PID reuse cannot be ruled out.
-                    // Such a process is deliberately excluded from lifecycle tracking.
-                    continue;
-                }
-
-                string name = TryRead(() => process.ProcessName) ?? "Unknown";
-                ulong? workingSet = TryRead(() => ToUnsigned(process.WorkingSet64));
-                ulong? privateBytes = TryRead(() => ToUnsigned(process.PrivateMemorySize64));
-                TimeSpan? cpuTime = TryRead(() => process.TotalProcessorTime);
-                IoCounters? io = TryReadIoCounters(processId);
-
-                observations.Add(new ProcessLifecycleObservation(
-                    Identity: new ProcessIdentity(processId, startedAt.Value),
-                    Name: name,
-                    ParentProcessId: parentIds.TryGetValue(processId, out int parentId) && parentId > 0
-                        ? parentId
-                        : null,
-                    CapturedAt: timestamp,
-                    WorkingSetBytes: workingSet,
-                    PrivateBytes: privateBytes,
-                    TotalCpuTime: cpuTime,
-                    ReadOperationCount: io?.ReadOperationCount,
-                    WriteOperationCount: io?.WriteOperationCount,
-                    ReadTransferBytes: io?.ReadTransferCount,
-                    WriteTransferBytes: io?.WriteTransferCount));
+                processId = process.Id;
             }
-            catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
+            catch (Exception exception) when (IsExpectedProcessAccessFailure(exception))
             {
-                // Processes can exit or become inaccessible during an inventory pass.
+                enumerationStatus = ProcessEnumerationStatus.Failed;
+                failureReasons.Add("לא ניתן לקרוא PID של אחד התהליכים במהלך הדגימה.");
+                continue;
+            }
+
+            if (processId <= 0)
+            {
+                enumerationStatus = ProcessEnumerationStatus.Failed;
+                failureReasons.Add("נמצא מזהה תהליך לא תקין במהלך הדגימה.");
+                continue;
+            }
+
+            DateTimeOffset? startedAt = TryRead(() =>
+                new DateTimeOffset(process.StartTime.ToUniversalTime()));
+            string? name = TryRead(() => process.ProcessName);
+            ulong? workingSet = TryRead(() => ToUnsigned(process.WorkingSet64));
+            ulong? privateBytes = TryRead(() => ToUnsigned(process.PrivateMemorySize64));
+            TimeSpan? totalCpuTime = TryRead(() => process.TotalProcessorTime);
+            IoCounters? io = TryReadIoCounters(processId);
+
+            bool parentAvailable = parentSnapshot.ParentIds.TryGetValue(
+                processId,
+                out int? parentProcessId);
+
+            if (!parentAvailable && parentStatus == ParentMetadataStatus.Complete)
+            {
+                parentStatus = ParentMetadataStatus.Partial;
+                failureReasons.Add("צילום ה-Toolhelp לא כלל את כל מזהי התהליכים שנאספו.");
+            }
+
+            entries.Add(new ProcessInventoryEntry(
+                ProcessId: processId,
+                Identity: startedAt.HasValue
+                    ? new ProcessIdentity(processId, startedAt.Value)
+                    : null,
+                Name: name,
+                ParentProcessId: parentAvailable ? parentProcessId : null,
+                ParentMetadataAvailable: parentAvailable,
+                WorkingSetBytes: workingSet,
+                PrivateBytes: privateBytes,
+                TotalCpuTime: totalCpuTime,
+                CapturedAt: timestamp,
+                ReadOperationCount: io?.ReadOperationCount,
+                WriteOperationCount: io?.WriteOperationCount,
+                ReadTransferBytes: io?.ReadTransferCount,
+                WriteTransferBytes: io?.WriteTransferCount));
+
+            if (!startedAt.HasValue)
+            {
+                failureReasons.Add($"זמן יצירת התהליך PID {processId} אינו זמין; זהותו לא אומתה.");
             }
         }
 
-        return observations
-            .OrderBy(item => item.Identity.ProcessId)
-            .ToArray();
+        if (entries.GroupBy(entry => entry.ProcessId).Any(group => group.Count() > 1))
+        {
+            parentStatus = ParentMetadataStatus.Partial;
+            failureReasons.Add("נמצאו מזהי PID כפולים בדגימה; שיוך קשרי הורה-ילד אינו אמין.");
+        }
+
+        return new ProcessInventorySnapshot(
+            CapturedAt: timestamp,
+            EnumerationStatus: enumerationStatus,
+            ParentMetadataStatus: parentStatus,
+            Entries: entries.ToArray(),
+            FailureReason: failureReasons.Count == 0
+                ? null
+                : string.Join(" ", failureReasons.Distinct()));
     }
 
-    private static IReadOnlyDictionary<int, int> ReadParentProcessIds()
+    private static ParentProcessSnapshot ReadParentProcessIds()
     {
-        var result = new Dictionary<int, int>();
+        var parentIds = new Dictionary<int, int?>();
         IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if (snapshot == InvalidHandleValue)
+
+        if (snapshot == IntPtr.Zero || snapshot == InvalidHandleValue)
         {
-            return result;
+            int error = Marshal.GetLastWin32Error();
+            return new ParentProcessSnapshot(
+                parentIds,
+                ParentMetadataStatus.Unavailable,
+                $"יצירת צילום תהליכי Windows נכשלה (Win32 {error}).");
         }
+
+        ParentMetadataStatus status;
+        string? failureReason = null;
 
         try
         {
@@ -91,26 +133,58 @@ internal sealed class WindowsProcessInventoryProvider
 
             if (!Process32First(snapshot, ref entry))
             {
-                return result;
-            }
-
-            do
-            {
-                if (entry.ProcessId > 0 && entry.ParentProcessId > 0)
+                int error = Marshal.GetLastWin32Error();
+                if (error == ERROR_NO_MORE_FILES)
                 {
-                    result[(int)entry.ProcessId] = (int)entry.ParentProcessId;
+                    status = ParentMetadataStatus.Complete;
                 }
-
-                entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
+                else
+                {
+                    status = ParentMetadataStatus.Unavailable;
+                    failureReason = $"קריאת Process32First נכשלה (Win32 {error}).";
+                }
             }
-            while (Process32Next(snapshot, ref entry));
+            else
+            {
+                do
+                {
+                    if (entry.ProcessId > 0)
+                    {
+                        parentIds[(int)entry.ProcessId] = entry.ParentProcessId > 0
+                            ? (int)entry.ParentProcessId
+                            : null;
+                    }
+
+                    entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
+                }
+                while (Process32Next(snapshot, ref entry));
+
+                int terminalError = Marshal.GetLastWin32Error();
+                if (terminalError == ERROR_NO_MORE_FILES)
+                {
+                    status = ParentMetadataStatus.Complete;
+                }
+                else
+                {
+                    status = ParentMetadataStatus.Partial;
+                    failureReason = $"סריקת מזהי ההורים נקטעה (Win32 {terminalError}).";
+                }
+            }
         }
         finally
         {
-            CloseHandle(snapshot);
+            if (!CloseHandle(snapshot))
+            {
+                int error = Marshal.GetLastWin32Error();
+                if (status == ParentMetadataStatus.Complete)
+                {
+                    status = ParentMetadataStatus.Partial;
+                    failureReason = $"סגירת צילום התהליכים נכשלה (Win32 {error}).";
+                }
+            }
         }
 
-        return result;
+        return new ParentProcessSnapshot(parentIds, status, failureReason);
     }
 
     private static IoCounters? TryReadIoCounters(int processId)
@@ -139,7 +213,7 @@ internal sealed class WindowsProcessInventoryProvider
         {
             return read();
         }
-        catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
+        catch (Exception exception) when (IsExpectedProcessAccessFailure(exception))
         {
             return default;
         }
@@ -158,6 +232,12 @@ internal sealed class WindowsProcessInventoryProvider
     private static readonly IntPtr InvalidHandleValue = new(-1);
     private const uint TH32CS_SNAPPROCESS = 0x00000002;
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const int ERROR_NO_MORE_FILES = 18;
+
+    private sealed record ParentProcessSnapshot(
+        IReadOnlyDictionary<int, int?> ParentIds,
+        ParentMetadataStatus Status,
+        string? FailureReason);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ProcessEntry32
@@ -203,7 +283,10 @@ internal sealed class WindowsProcessInventoryProvider
     private static extern bool CloseHandle(IntPtr handle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
+    private static extern IntPtr OpenProcess(
+        uint desiredAccess,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
+        uint processId);
 
     [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "GetProcessIoCounters")]
     [return: MarshalAs(UnmanagedType.Bool)]
