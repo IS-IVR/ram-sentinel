@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: implementation plan
+Status: implementation in progress; Windows CI and review pending
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6)
 
 ## Objective
@@ -59,14 +59,28 @@ Use one process enumeration per 30-second diagnostic sample for both the existin
 
 ## Implementation sequence
 
-- [ ] Refactor provider to consume caller-owned process instances and a required timestamp.
-- [ ] Introduce one app-level process snapshot owner for the diagnostic sample.
-- [ ] Build UI rows, CPU deltas, and lifecycle observations from that shared snapshot.
-- [ ] Change CPU history key from PID to `ProcessIdentity` and prune exited identities safely.
-- [ ] Gate tracker updates on inventory validity/completeness.
+- [x] Refactor provider to consume caller-owned process instances and a required timestamp.
+- [x] Introduce one app-level process snapshot owner for the diagnostic sample.
+- [x] Build UI rows, CPU deltas, and lifecycle observations from that shared snapshot.
+- [x] Change CPU history key from PID to `ProcessIdentity` and prune exited identities safely.
+- [x] Gate tracker updates on inventory validity/completeness.
 - [ ] Add focused tests for shared-snapshot semantics and failure paths.
 - [ ] Run Windows CI and inspect the resulting PR diff before merge.
 
 ## Acceptance
 
 The process table and lifecycle tracker receive data from one process enumeration per diagnostic sample, the existing 30-second cadence remains unchanged, and no new automated process action or recommendation is enabled.
+
+
+## Implementation checkpoint
+
+Implemented on `feature/shared-process-inventory`:
+- `MainForm` now obtains the `Process[]` once and passes the same caller-owned instances and UTC timestamp to the lifecycle provider.
+- The provider no longer calls `Process.GetProcesses()` and does not dispose caller-owned instances.
+- `MainForm` disposes the snapshot instances in a `finally` block.
+- The process table and lifecycle tracker now use observations from the same sample.
+- CPU history is keyed by `ProcessIdentity` (PID + start time), not PID alone.
+- Tracker confidence is not advanced when the provider cannot produce an observation for every enumerated process.
+- The existing diagnostic cadence and user-confirmed normal-close flow are unchanged.
+
+Not yet verified: Windows build, automated checks, and runtime behavior on a low-resource PC. This branch is not ready to merge until CI and code review pass.
