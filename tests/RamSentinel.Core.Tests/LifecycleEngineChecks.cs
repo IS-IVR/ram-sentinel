@@ -39,6 +39,7 @@ internal static class LifecycleEngineChecks
         ("Incomplete inventory clears previous relationship confidence", TestProcessorClearsRelationshipsOnIncompleteInventory),
         ("Missing CPU samples reset the cumulative CPU baseline", TestProcessorResetsMissingCpuBaseline),
         ("A reused PID never inherits another process instance CPU history", TestProcessorPidReuseResetsCpuHistory),
+        ("Out-of-order inventories cannot replace a newer CPU baseline", TestProcessorOutOfOrderSampleDoesNotChangeCpuBaseline),
     ];
 
     private static void TestRepeatedObservation()
@@ -727,6 +728,41 @@ internal static class LifecycleEngineChecks
             PrivateBytes: privateBytes,
             TotalCpuTime: totalCpuTime,
             CapturedAt: capturedAt);
+
+    private static void TestProcessorOutOfOrderSampleDoesNotChangeCpuBaseline()
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        DateTimeOffset processStarted = start.AddMinutes(-2);
+        var processor = new ProcessInventorySampleProcessor(logicalProcessorCount: 1);
+
+        _ = processor.Process(ProcessorSnapshot(
+            start,
+            ProcessorEntry(500, processStarted, start, null, TimeSpan.FromSeconds(1), 1000, 2000, "Worker")));
+
+        DateTimeOffset newestAt = start.AddSeconds(30);
+        ProcessInventoryProcessingResult newest = processor.Process(ProcessorSnapshot(
+            newestAt,
+            ProcessorEntry(500, processStarted, newestAt, null, TimeSpan.FromSeconds(2), 1000, 2000, "Worker")));
+        Assert(newest.PerformanceSamples.Single().CpuPercent.HasValue,
+            "The second chronological sample should create a CPU percentage.");
+
+        DateTimeOffset staleAt = start.AddSeconds(15);
+        ProcessInventoryProcessingResult stale = processor.Process(ProcessorSnapshot(
+            staleAt,
+            ProcessorEntry(500, processStarted, staleAt, null, TimeSpan.FromSeconds(100), 1000, 2000, "Worker")));
+        Assert(!stale.RelationshipsAdvanced && stale.Relationships.Count == 0,
+            "An out-of-order inventory must not expose relationship state as current for the stale sample.");
+        Assert(stale.PerformanceSamples.Single().CpuPercent is null,
+            "CPU percent for an out-of-order inventory must be unavailable.");
+
+        DateTimeOffset nextAt = start.AddSeconds(60);
+        ProcessInventoryProcessingResult next = processor.Process(ProcessorSnapshot(
+            nextAt,
+            ProcessorEntry(500, processStarted, nextAt, null, TimeSpan.FromSeconds(3), 1000, 2000, "Worker")));
+        Assert(next.PerformanceSamples.Single().CpuPercent.HasValue &&
+               Math.Abs(next.PerformanceSamples.Single().CpuPercent!.Value - 3.333333333d) < 0.001,
+            "The next chronological sample must use the newest valid CPU baseline, not the stale sample.");
+    }
 
     private static void TestEntryParentMetadataUnavailable()
     {
