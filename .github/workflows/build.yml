@@ -28,22 +28,22 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore .\\ram-sentinel.sln
+        run: dotnet restore .\ram-sentinel.sln
 
       - name: Build
-        run: dotnet build .\\ram-sentinel.sln --configuration Release --no-restore
+        run: dotnet build .\ram-sentinel.sln --configuration Release --no-restore
 
       - name: Run memory pressure logic checks
-        run: dotnet run --project .\\tests\\RamSentinel.Core.Tests\\RamSentinel.Core.Tests.csproj --configuration Release --no-build
+        run: dotnet run --project .\tests\RamSentinel.Core.Tests\RamSentinel.Core.Tests.csproj --configuration Release --no-build
 
       - name: Run Windows process inventory integration checks
-        run: dotnet run --project .\\tests\\RamSentinel.App.Tests\\RamSentinel.App.Tests.csproj --configuration Release --no-build
+        run: dotnet run --project .\tests\RamSentinel.App.Tests\RamSentinel.App.Tests.csproj --configuration Release --no-build
 
       - name: Run inventory soak harness smoke check
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'ram-sentinel-soak-smoke.csv'
-          dotnet run --project .\\tools\\RamSentinel.InventorySoak\\RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
+          dotnet run --project .\tools\RamSentinel.InventorySoak\RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
 
       - name: Publish standalone x64 app
         shell: pwsh
@@ -53,11 +53,11 @@ jobs:
           } else {
             $version = '0.0.0-ci'
           }
-          dotnet publish .\\src\\RamSentinel.App\\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=$version --output .\\artifacts\\win-x64
+          dotnet publish .\src\RamSentinel.App\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=$version --output .\artifacts\win-x64
           if ($LASTEXITCODE -ne 0) { throw "Application publish failed: $LASTEXITCODE" }
 
       - name: Publish standalone x64 inventory soak tool
-        run: dotnet publish .\\tools\\RamSentinel.InventorySoak\\RamSentinel.InventorySoak.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\\artifacts\\inventory-soak-win-x64
+        run: dotnet publish .\tools\RamSentinel.InventorySoak\RamSentinel.InventorySoak.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\artifacts\inventory-soak-win-x64
 
       - name: Ensure Inno Setup 6 is available
         shell: pwsh
@@ -65,7 +65,7 @@ jobs:
           $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
           $compiler = $null
           if ($programFilesX86) {
-            $candidate = Join-Path $programFilesX86 'Inno Setup 6\\ISCC.exe'
+            $candidate = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { $compiler = $candidate }
           }
           if (-not $compiler) {
@@ -73,7 +73,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Inno Setup installation failed: $LASTEXITCODE" }
           }
           if (-not $compiler -and $programFilesX86) {
-            $candidate = Join-Path $programFilesX86 'Inno Setup 6\\ISCC.exe'
+            $candidate = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { $compiler = $candidate }
           }
           if (-not $compiler) { throw 'ISCC.exe was not found after installing Inno Setup 6.' }
@@ -86,27 +86,27 @@ jobs:
           } else {
             $version = '0.0.0-ci'
           }
-          .\\scripts\\Build-Release.ps1 -AppVersion $version
+          .\scripts\Build-Release.ps1 -AppVersion $version
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ram-sentinel-win-x64
-          path: .\\artifacts\\win-x64\\
+          path: .\artifacts\win-x64\
           if-no-files-found: error
 
       - name: Upload inventory soak tool
         uses: actions/upload-artifact@v4
         with:
           name: ram-sentinel-inventory-soak-win-x64
-          path: .\\artifacts\\inventory-soak-win-x64\\
+          path: .\artifacts\inventory-soak-win-x64\
           if-no-files-found: error
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
           name: ram-sentinel-release-assets
-          path: .\\artifacts\\release\\
+          path: .\artifacts\release\
           if-no-files-found: error
 
   publish-release:
@@ -136,6 +136,7 @@ jobs:
           $arguments = @(
             'release', 'create', $env:GITHUB_REF_NAME,
             '--verify-tag',
+            '--repo', $env:GITHUB_REPOSITORY,
             '--title', "RAM Sentinel $version",
             '--generate-notes'
           ) + $assetPaths
