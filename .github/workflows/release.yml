@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ram-sentinel-release-\${{ github.ref }}
+  group: ram-sentinel-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -65,7 +65,7 @@ jobs:
           dotnet run --project ./tools/RamSentinel.InventorySoak/RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
 
       - name: Publish self-contained x64 application
-        run: dotnet publish ./src/RamSentinel.App/RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=\${{ env.APP_VERSION }} --output ./artifacts/win-x64
+        run: dotnet publish ./src/RamSentinel.App/RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ env.APP_VERSION }} --output ./artifacts/win-x64
 
       - name: Verify published executable
         shell: pwsh
@@ -142,16 +142,15 @@ jobs:
 
       - name: Create release with generated notes
         env:
-          GH_TOKEN: \${{ github.token }}
-        shell: pwsh
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          $files = Get-ChildItem 'release-assets' -File | ForEach-Object { $_.FullName }
-          if ($files.Count -ne 3) {
-            throw "Expected installer, portable ZIP, and checksum file; found $($files.Count) files."
-          }
+          version="${GITHUB_REF_NAME#v}"
+          shopt -s nullglob
+          files=(release-assets/*)
+          if [ "${#files[@]}" -ne 3 ]; then
+            echo "Expected installer, portable ZIP, and checksum file; found ${#files[@]} files." >&2
+            exit 1
+          fi
 
-          & gh release create $env:GITHUB_REF_NAME @files --title "RAM Sentinel $version" --generate-notes --verify-tag
-          if ($LASTEXITCODE -ne 0) {
-            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
-          }
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" --title "RAM Sentinel $version" --generate-notes --verify-tag
