@@ -21,11 +21,221 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
+      - name: Validate release tag and main ancestry
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v\d+\.\d+\.\d+
+
+      - name: Build
+        run: dotnet build .\ram-sentinel.sln --configuration Release --no-restore
+
+      - name: Run memory pressure logic checks
+        run: dotnet run --project .\tests\RamSentinel.Core.Tests\RamSentinel.Core.Tests.csproj --configuration Release --no-build
+
+      - name: Run Windows process inventory integration checks
+        run: dotnet run --project .\tests\RamSentinel.App.Tests\RamSentinel.App.Tests.csproj --configuration Release --no-build
+
+      - name: Run inventory soak harness smoke check
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'ram-sentinel-soak-smoke.csv'
+          dotnet run --project .\tools\RamSentinel.InventorySoak\RamSentinel.InventorySoak.csproj --configuration Release --no-build -- --once --output $output
+
+      - name: Publish standalone x64 app
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = '0.0.0-ci'
+          }
+          dotnet publish .\src\RamSentinel.App\RamSentinel.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:Version=$version --output .\artifacts\win-x64
+          if ($LASTEXITCODE -ne 0) { throw "Application publish failed: $LASTEXITCODE" }
+
+      - name: Publish standalone x64 inventory soak tool
+        run: dotnet publish .\tools\RamSentinel.InventorySoak\RamSentinel.InventorySoak.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output .\artifacts\inventory-soak-win-x64
+
+      - name: Ensure Inno Setup 6 is available
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          $compiler = $null
+          if ($programFilesX86) {
+            $candidate = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $compiler = $candidate }
+          }
+          if (-not $compiler) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup installation failed: $LASTEXITCODE" }
+          }
+          if (-not $compiler -and $programFilesX86) {
+            $candidate = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $compiler = $candidate }
+          }
+          if (-not $compiler) { throw 'ISCC.exe was not found after installing Inno Setup 6.' }
+
+      - name: Build installer, Portable ZIP and SHA-256
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = '0.0.0-ci'
+          }
+          .\scripts\Build-Release.ps1 -AppVersion $version
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-sentinel-win-x64
+          path: .\artifacts\win-x64\
+          if-no-files-found: error
+
+      - name: Upload inventory soak tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-sentinel-inventory-soak-win-x64
+          path: .\artifacts\inventory-soak-win-x64\
+          if-no-files-found: error
+
+      - name: Smoke test per-user install and uninstall
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $installer = Join-Path $PWD "artifacts/release/RAM-Sentinel-Setup-$version-win-x64.exe"
+          $sourceExe = Join-Path $PWD 'artifacts/win-x64/RamSentinel.exe'
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'RAM Sentinel Installer Smoke Test'
+
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Installer not found: $installer"
+          }
+          if (Test-Path -LiteralPath $installDirectory) {
+            Remove-Item -LiteralPath $installDirectory -Recurse -Force
+          }
+
+          $installArguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LANG=english /DIR="' + $installDirectory + '"'
+          $installProcess = Start-Process -FilePath $installer -ArgumentList $installArguments -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "Silent per-user installation failed with exit code $($installProcess.ExitCode)."
+          }
+
+          $installedExe = Join-Path $installDirectory 'RamSentinel.exe'
+          if (-not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+            throw 'Installation completed without the expected RamSentinel.exe.'
+          }
+
+          $sourceHash = (Get-FileHash -LiteralPath $sourceExe -Algorithm SHA256).Hash
+          $installedHash = (Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash
+          if ($sourceHash -ne $installedHash) {
+            throw 'Installed executable hash does not match the published executable.'
+          }
+
+          $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{B0AC2F28-7F67-4D88-9A38-A7EDB86A51A2}_is1'
+          if (-not (Test-Path -LiteralPath $uninstallKey)) {
+            throw 'Per-user uninstall registration was not created.'
+          }
+
+          $uninstaller = Join-Path $installDirectory 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+            throw 'The expected uninstaller was not installed.'
+          }
+
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "Silent uninstall failed with exit code $($uninstallProcess.ExitCode)."
+          }
+          if (Test-Path -LiteralPath $installedExe) {
+            throw 'Uninstaller completed but RamSentinel.exe remains in the installation directory.'
+          }
+          if (Test-Path -LiteralPath $uninstallKey) {
+            throw 'Per-user uninstall registration remains after uninstall.'
+          }
+
+          Write-Host 'Per-user install, executable integrity, uninstall registration, and uninstall smoke test passed.'
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ram-sentinel-release-assets
+          path: .\artifacts\release\
+          if-no-files-found: error
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require release commit to be reachable from main
+        shell: pwsh
+        run: |
+          git fetch origin main:refs/remotes/origin/main --no-tags
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch main for final release validation.' }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Refusing to publish: the tagged commit is not reachable from main."
+          }
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ram-sentinel-release-assets
+          path: artifacts/release-assets
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assetPaths = @(Get-ChildItem -LiteralPath 'artifacts/release-assets' -File | Sort-Object Name | ForEach-Object { $_.FullName })
+          if ($assetPaths.Count -ne 3) {
+            throw "Expected exactly three release assets; found $($assetPaths.Count)."
+          }
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $arguments = @(
+            'release', 'create', $env:GITHUB_REF_NAME,
+            '--verify-tag',
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--title', "RAM Sentinel $version",
+            '--generate-notes'
+          ) + $assetPaths
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation failed: $LASTEXITCODE"
+          }
+) {
+            throw "Release tags must use the exact vMAJOR.MINOR.PATCH format (example: v1.2.3)."
+          }
+
+          git fetch origin main:refs/remotes/origin/main --no-tags
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch the current main branch for release validation."
+          }
+
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Refusing to build release packages: the tagged commit is not reachable from main."
+          }
 
       - name: Restore
         run: dotnet restore .\ram-sentinel.sln
