@@ -1,6 +1,6 @@
 # Shared Process Inventory Integration
 
-Status: shared-snapshot and Toolhelp state-machine integration implemented; Windows CI run #59 passed for commit `2426eb99aeeb25491bf8ce0a3026e694b0180b68`; process-property reader tests and real Windows soak test pending  
+Status: shared-snapshot, Toolhelp state machine, and injectable process-property reader implemented; Windows CI run #62 passed for commit `7f35e15c8208a451db5ad6593418857ebbf66e82`; real Windows P/Invoke and low-resource soak validation pending  
 Related: [Issue #7](https://github.com/IS-IVR/ram-sentinel/issues/7), [Issue #9](https://github.com/IS-IVR/ram-sentinel/issues/9), [PR #6](https://github.com/IS-IVR/ram-sentinel/pull/6), [PR #8](https://github.com/IS-IVR/ram-sentinel/pull/8)
 
 ## Objective
@@ -35,12 +35,12 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - Added process-property reader tests proving one read per property, null preservation after access failures, and early stop when PID cannot be read.
 - Snapshot gating also rejects non-empty failure reasons, invalid non-null parent PIDs, and process creation timestamps later than the inventory capture.
 - Relationship tracking rejects a proposed parent whose process creation time is later than the child's, even across repeated samples.
-- Windows CI run #56 passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`: restore, build, all Core checks, standalone x64 publish, and artifact upload.
-- Toolhelp control flow is now covered by a platform-independent callback state machine in Core. The actual Win32 P/Invoke marshalling adapter and per-property Windows process reader are still not directly exercised by the Core tests.
+- Windows CI run #62 passed for commit `7f35e15c8208a451db5ad6593418857ebbf66e82`: restore, build, all 57 logic checks, standalone x64 publish, and artifact upload.
+- Toolhelp control flow is covered by a platform-independent callback state machine in Core. The property-reader contract is covered with injected accessors, but the concrete System.Diagnostics.Process adapter and actual Win32 P/Invoke marshalling still need Windows runtime validation.
 
 ## Remaining validation
 
-- [x] Windows CI passes for commit `2426eb99aeeb25491bf8ce0a3026e694b0180b68` (run #59).
+- [x] Windows CI passes for commit `7f35e15c8208a451db5ad6593418857ebbf66e82` (run #62).
 - [x] Extract Toolhelp snapshot-state handling into an injectable Core callback state machine and add deterministic tests for creation, first-entry, mid-enumeration, end-of-list, close, and duplicate-PID cases.
 - [x] Add a deterministic process-property reader seam proving each Process property is sampled once, access failures preserve null values, and a missing PID prevents dependent reads.
 - [ ] Review the thin Windows P/Invoke adapter on a real Windows host; the callback state machine and property-reader contract are tested, but the P/Invoke marshalling and concrete System.Diagnostics.Process adapter still need runtime validation.
