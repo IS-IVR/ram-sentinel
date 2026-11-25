@@ -58,8 +58,14 @@
 - [ ] 24-hour soak test.
 - [ ] בדיקות על 4/8/16 GB RAM ו-HDD/SSD.
 - [ ] תקציב CPU/RAM עצמי.
-- [ ] Installer, Uninstaller, Signing ו-Update.
+- [x] טיוטת מתקין Inno Setup להתקנה למשתמש הנוכחי, ללא דרישת מנהל מערכת ועם הסרה רגילה.
+- [x] טיוטת Workflow להפצת Installer ו-Portable ZIP מתגי גרסה בלבד, לאחר בדיקות Windows ועל commit שנמצא ב-main.
+- [x] יצירת SHA-256 ותיעוד בדיקת download_count לכל נכס Release במאגר פרטי.
+- [ ] אימות קומפילציית המתקין ב-Windows באמצעות תג גרסה לאחר מיזוג הקוד המאושר ל-main.
+- [ ] חתימת קוד והפצת עדכונים אוטומטית.
 - [ ] פרסום רק עם תוצאות Benchmark משוחזרות.
+
+מפרט ההתקנה וההפצה: [docs/INSTALLER_AND_RELEASES.md](INSTALLER_AND_RELEASES.md). העבודה נמצאת בענף טיוטה נפרד; לא נוצר תג ולא פורסמה גרסה.
 
 ## M6 - Smart Application Lifecycle Manager
 
