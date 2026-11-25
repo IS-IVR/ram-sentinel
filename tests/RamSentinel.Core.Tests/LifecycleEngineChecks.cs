@@ -16,7 +16,10 @@ internal static class LifecycleEngineChecks
         ("A valid empty inventory is distinguishable from failure", TestCompleteEmptyInventory),
         ("An identity with a different PID blocks relationship tracking", TestIdentityPidMismatch),
         ("An entry captured at a different time blocks relationship tracking", TestCapturedAtMismatch),
-        ("Unavailable parent metadata on an entry blocks relationship tracking", TestEntryParentMetadataUnavailable)
+        ("Unavailable parent metadata on an entry blocks relationship tracking", TestEntryParentMetadataUnavailable),
+        ("Duplicate PIDs block relationship tracking", TestDuplicateInventoryPid),
+        ("Owned snapshot enumerates once and disposes every item", TestOwnedSnapshotOwnership),
+        ("Owned snapshot disposes every item after capture failure", TestOwnedSnapshotDisposalAfterFailure)
     ];
 
     private static void TestRepeatedObservation()
@@ -182,6 +185,79 @@ internal static class LifecycleEngineChecks
 
         Assert(!snapshot.CanAdvanceRelationships,
             "Every entry must use the exact timestamp assigned to its inventory snapshot.");
+    }
+
+    private static void TestDuplicateInventoryPid()
+    {
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        ProcessInventoryEntry first = InventoryEntry(at);
+        ProcessInventoryEntry duplicate = first with
+        {
+            Identity = new ProcessIdentity(first.ProcessId, at.AddSeconds(-1))
+        };
+        ProcessInventorySnapshot snapshot = new(
+            at,
+            ProcessEnumerationStatus.Complete,
+            ParentMetadataStatus.Complete,
+            [first, duplicate]);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "Duplicate PIDs must block relationship tracking even when both entries have valid identities.");
+    }
+
+    private static void TestOwnedSnapshotOwnership()
+    {
+        int enumerationCalls = 0;
+        int captureCalls = 0;
+        var disposed = new List<int>();
+
+        int result = OwnedSnapshotCapture.Execute(
+            enumerate: () =>
+            {
+                enumerationCalls++;
+                return new[] { 1, 2, 3 };
+            },
+            capture: items =>
+            {
+                captureCalls++;
+                return items.Sum();
+            },
+            dispose: item => disposed.Add(item));
+
+        Assert(result == 6, "The capture result should be returned.");
+        Assert(enumerationCalls == 1, "The enumerator must be called exactly once.");
+        Assert(captureCalls == 1, "The capture callback must be called exactly once.");
+        Assert(disposed.SequenceEqual([1, 2, 3]),
+            "Every owned item must be disposed exactly once in enumeration order.");
+    }
+
+    private static void TestOwnedSnapshotDisposalAfterFailure()
+    {
+        int enumerationCalls = 0;
+        var disposed = new List<int>();
+        bool threw = false;
+
+        try
+        {
+            _ = OwnedSnapshotCapture.Execute(
+                enumerate: () =>
+                {
+                    enumerationCalls++;
+                    return new[] { 4, 5, 6 };
+                },
+                capture: _ => throw new InvalidOperationException("Expected capture failure."),
+                dispose: item => disposed.Add(item));
+        }
+        catch (InvalidOperationException exception) when (
+            exception.Message == "Expected capture failure.")
+        {
+            threw = true;
+        }
+
+        Assert(threw, "The original capture failure must be rethrown.");
+        Assert(enumerationCalls == 1, "The enumerator must still be called exactly once.");
+        Assert(disposed.SequenceEqual([4, 5, 6]),
+            "Every owned item must be disposed exactly once after capture fails.");
     }
 
     private static void TestEntryParentMetadataUnavailable()

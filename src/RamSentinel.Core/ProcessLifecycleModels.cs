@@ -11,7 +11,7 @@ public sealed record ProcessIdentity(int ProcessId, DateTimeOffset StartedAtUtc)
 /// </summary>
 public sealed record ProcessLifecycleObservation(
     ProcessIdentity Identity,
-    string Name,
+    string? Name,
     int? ParentProcessId,
     DateTimeOffset CapturedAt,
     string? ExecutablePath = null,

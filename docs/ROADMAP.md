@@ -69,7 +69,8 @@
 - [x] איפוס רמת הביטחון לאחר שימוש חוזר ב-PID או פער איסוף ארוך.
 - [x] בדיקות לתהליך הורה חסר, PID כפול, PID ממוחזר וסדר דגימות.
 - [x] Windows Process Inventory Provider: איסוף Parent PID, נתוני תהליך ונתוני I/O באופן חסכוני.
-- [ ] חיבור ה-Provider לרענון התהליכים הקיים ול-ProcessRelationshipTracker, ללא סריקה כפולה.
+- [x] חיבור ה-Provider לרענון התהליכים הקיים ול-ProcessRelationshipTracker באמצעות תצפית בלתי-משתנה וללא סריקה כפולה.
+- [ ] בדיקת Windows ממושכת במחשב חלש ואימות עלות האיסוף לפני הצגת המלצות Lifecycle.
 - [ ] Foreground-window event tracking ללא איסוף כותרות חלונות או קלט משתמש.
 - [ ] בדיקות אינטגרציה על Windows ובדיקת עומס ממושכת.
 

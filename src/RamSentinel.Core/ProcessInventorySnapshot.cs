@@ -28,12 +28,16 @@ public sealed record ProcessInventoryEntry(
     ulong? WorkingSetBytes,
     ulong? PrivateBytes,
     TimeSpan? TotalCpuTime,
-    DateTimeOffset CapturedAt);
+    DateTimeOffset CapturedAt,
+    ulong? ReadOperationCount = null,
+    ulong? WriteOperationCount = null,
+    ulong? ReadTransferBytes = null,
+    ulong? WriteTransferBytes = null);
 
 /// <summary>
 /// Immutable result envelope for one process inventory attempt. Relationship tracking
-/// is permitted only when the top-level enumeration and all parent metadata are complete,
-/// and every returned process has a verified identity and parent-metadata observation.
+/// is permitted only when enumeration and parent metadata are complete, every process
+/// has a verified identity, and no PID is duplicated in the sample.
 /// </summary>
 public sealed record ProcessInventorySnapshot(
     DateTimeOffset CapturedAt,
@@ -42,13 +46,33 @@ public sealed record ProcessInventorySnapshot(
     IReadOnlyList<ProcessInventoryEntry> Entries,
     string? FailureReason = null)
 {
-    public bool CanAdvanceRelationships =>
-        EnumerationStatus == ProcessEnumerationStatus.Complete &&
-        ParentMetadataStatus == ParentMetadataStatus.Complete &&
-        Entries.All(entry =>
-            entry.Identity is not null &&
-            entry.ProcessId > 0 &&
-            entry.Identity.ProcessId == entry.ProcessId &&
-            entry.CapturedAt == CapturedAt &&
-            entry.ParentMetadataAvailable);
+    public bool CanAdvanceRelationships
+    {
+        get
+        {
+            if (EnumerationStatus != ProcessEnumerationStatus.Complete ||
+                ParentMetadataStatus != ParentMetadataStatus.Complete ||
+                Entries is null)
+            {
+                return false;
+            }
+
+            var seenProcessIds = new HashSet<int>();
+            foreach (ProcessInventoryEntry entry in Entries)
+            {
+                if (entry is null ||
+                    entry.ProcessId <= 0 ||
+                    entry.Identity is null ||
+                    entry.Identity.ProcessId != entry.ProcessId ||
+                    entry.CapturedAt != CapturedAt ||
+                    !entry.ParentMetadataAvailable ||
+                    !seenProcessIds.Add(entry.ProcessId))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 }
