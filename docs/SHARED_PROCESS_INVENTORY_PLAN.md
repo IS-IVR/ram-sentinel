@@ -76,7 +76,7 @@ The process table and lifecycle tracker receive data from one process enumeratio
 
 Implemented on `feature/shared-process-inventory`:
 - `MainForm` now obtains the `Process[]` once and passes the same caller-owned instances and UTC timestamp to the lifecycle provider.
-- The provider no longer calls `Process.GetProcesses()` and does not dispose caller-owned instances.
+- The provider no longer calls `Process.GetProcesses()` and does not dispose caller-owned instances. It still takes a Toolhelp32 snapshot for parent-PID metadata.
 - `MainForm` disposes the snapshot instances in a `finally` block.
 - The process table and lifecycle tracker now use observations from the same sample.
 - CPU history is keyed by `ProcessIdentity` (PID + start time), not PID alone.
