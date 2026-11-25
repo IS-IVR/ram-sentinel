@@ -24,7 +24,7 @@ dotnet publish .\src\RamSentinel.App\RamSentinel.App.csproj --configuration Rele
 
 The script creates:
 
-- `artifacts/release/RAM-Sentinel-Setup-0.1.0-win-x64.exe`
+- `artifacts/release/RAM-Sentinel-Setup-win-x64.exe` — stable asset name, so a single download URL can always resolve to the latest published version.
 - `artifacts/release/RAM-Sentinel-Portable-0.1.0-win-x64.zip`
 - `artifacts/release/SHA256SUMS.txt`
 
@@ -37,6 +37,14 @@ The Build and Test workflow builds and tests the application on pushes and pull 
 For a version tag, the Windows job compiles the installer, creates the Portable ZIP, generates SHA-256 checksums, then performs a silent per-user install/uninstall smoke test. The smoke test verifies that the installed executable is byte-for-byte identical to the published executable and that the per-user uninstall registration is created and removed. The release job checks out the tagged commit and verifies that it is reachable from `main` before uploading the three assets with generated release notes. A tag that points only to an unmerged feature branch is rejected. The workflow does not create tags.
 
 Do not create a public version tag until the project’s manual Windows validation and low-resource soak requirements are satisfied. In particular, PR #8 remains dependent on the Windows UI check and 30-minute soak documented in Issue #9. The step-by-step checklist is maintained in [docs/WINDOWS_MANUAL_VALIDATION.md](WINDOWS_MANUAL_VALIDATION.md).
+
+## Stable direct download link
+
+After the repository is made public and the first official GitHub Release is published, the permanent installer URL is:
+
+`https://github.com/IS-IVR/ram-sentinel/releases/latest/download/RAM-Sentinel-Setup-win-x64.exe`
+
+GitHub resolves `latest` to the newest published release and downloads the asset with the stable filename. Keep this asset name unchanged in future releases. While the repository remains private, only authenticated users with repository access can use this link.
 
 ## Download counts
 
