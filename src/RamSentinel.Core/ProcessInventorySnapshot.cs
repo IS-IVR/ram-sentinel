@@ -65,6 +65,7 @@ public sealed record ProcessInventorySnapshot(
                     entry.ProcessId <= 0 ||
                     entry.Identity is null ||
                     entry.Identity.ProcessId != entry.ProcessId ||
+                    entry.Identity.StartedAtUtc > CapturedAt ||
                     entry.CapturedAt != CapturedAt ||
                     entry.ParentProcessId is <= 0 ||
                     !entry.ParentMetadataAvailable ||

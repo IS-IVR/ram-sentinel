@@ -21,7 +21,9 @@ internal static class LifecycleEngineChecks
         ("Owned snapshot enumerates once and disposes every item", TestOwnedSnapshotOwnership),
         ("Owned snapshot disposes every item after capture failure", TestOwnedSnapshotDisposalAfterFailure),
         ("An inventory failure reason blocks relationship tracking", TestFailureReasonBlocksTracking),
-        ("An invalid parent PID blocks relationship tracking", TestInvalidParentPidBlocksTracking)
+        ("An invalid parent PID blocks relationship tracking", TestInvalidParentPidBlocksTracking),
+        ("A parent cannot start after its child", TestParentCreatedAfterChild),
+        ("A future process creation time blocks relationship tracking", TestFutureProcessIdentity)
     ];
 
     private static void TestRepeatedObservation()
@@ -282,6 +284,38 @@ internal static class LifecycleEngineChecks
 
         Assert(!snapshot.CanAdvanceRelationships,
             "A non-null parent PID must be a positive process identifier.");
+    }
+
+    private static void TestParentCreatedAfterChild()
+    {
+        DateTimeOffset childStartedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset parentStartedAt = childStartedAt.AddSeconds(1);
+        DateTimeOffset firstCapturedAt = childStartedAt.AddSeconds(2);
+        var tracker = new ProcessRelationshipTracker();
+
+        ProcessLifecycleObservation parent = Parent(parentStartedAt);
+        ProcessLifecycleObservation child = Child(childStartedAt);
+        Assert(tracker.Observe(firstCapturedAt, Snapshot(firstCapturedAt, parent, child)).Count == 0,
+            "A process that started after the child cannot be its parent.");
+
+        DateTimeOffset secondCapturedAt = firstCapturedAt.AddSeconds(30);
+        Assert(tracker.Observe(
+            secondCapturedAt,
+            Snapshot(secondCapturedAt, parent, child)).Count == 0,
+            "Repeated PID observations must not turn an impossible chronology into a relationship.");
+    }
+
+    private static void TestFutureProcessIdentity()
+    {
+        DateTimeOffset capturedAt = DateTimeOffset.UtcNow;
+        ProcessInventoryEntry entry = InventoryEntry(capturedAt) with
+        {
+            Identity = new ProcessIdentity(100, capturedAt.AddSeconds(1))
+        };
+        ProcessInventorySnapshot snapshot = CompleteSnapshot(capturedAt, entry);
+
+        Assert(!snapshot.CanAdvanceRelationships,
+            "A process creation timestamp after the sample timestamp is invalid.");
     }
 
     private static void TestEntryParentMetadataUnavailable()

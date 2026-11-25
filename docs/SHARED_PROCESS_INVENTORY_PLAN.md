@@ -17,7 +17,8 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - Toolhelp metadata distinguishes complete, partial, and unavailable snapshots. `Process32First` failures are checked, and `Process32Next` must end with `ERROR_NO_MORE_FILES` to be considered complete.
 - A successful empty Toolhelp snapshot is distinct from snapshot creation or enumeration failure.
 - A PID absent from an otherwise complete Toolhelp snapshot makes parent metadata partial; it is not assigned a guessed parent.
-- The Core inventory gate rejects failed enumeration, incomplete parent metadata, missing or mismatched identities, mismatched timestamps, unavailable per-entry parent metadata, and duplicate PIDs.
+- The Core inventory gate rejects failed enumeration, incomplete parent metadata, missing or mismatched identities, future creation times, mismatched timestamps, unavailable per-entry parent metadata, invalid parent PIDs, failure reasons, and duplicate PIDs.
+- Relationship tracking rejects impossible parent/child chronology: the parent process must have been created no later than its child.
 - Incomplete inventories clear lifecycle relationship confidence. No stale relationship is retained as current evidence.
 - The UI-only refresh path does not enumerate processes. Process enumeration stays inside the existing 30-second sample refresh.
 - No new timer, process-control capability, or lifecycle recommendation is introduced.
@@ -29,7 +30,8 @@ Use exactly one `Process.GetProcesses()` enumeration per diagnostic process samp
 - Every item is disposed exactly once after a successful capture.
 - Every item is disposed exactly once when the capture callback throws, and the original capture exception is rethrown.
 - Existing Core checks cover failed enumeration, partial parent metadata, missing identity, empty successful inventory, PID mismatch, timestamp mismatch, unavailable parent metadata, and duplicate PIDs.
-- Snapshot gating also rejects non-empty failure reasons and invalid non-null parent PIDs.
+- Snapshot gating also rejects non-empty failure reasons, invalid non-null parent PIDs, and process creation timestamps later than the inventory capture.
+- Relationship tracking rejects a proposed parent whose process creation time is later than the child's, even across repeated samples.
 - Windows CI run #56 passed for commit `9537c15bb24af34461a35ddca2d30b1bb14d9001`: restore, build, all Core checks, standalone x64 publish, and artifact upload.
 - The current Core tests do not yet directly execute the Windows P/Invoke provider; provider-specific injection seams and deterministic Toolhelp failure tests remain outstanding.
 
