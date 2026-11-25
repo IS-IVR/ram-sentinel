@@ -26,42 +26,42 @@ internal sealed class WindowsProcessInventoryProvider
             try
             {
                 int processId = process.Id;
-                    if (processId <= 0)
-                    {
-                        continue;
-                    }
-
-                    DateTimeOffset? startedAt = TryRead(() =>
-                        new DateTimeOffset(process.StartTime.ToUniversalTime()));
-
-                    if (startedAt is null)
-                    {
-                        // Without a creation time, PID reuse cannot be ruled out.
-                        // Such a process is deliberately excluded from lifecycle tracking.
-                        continue;
-                    }
-
-                    string name = TryRead(() => process.ProcessName) ?? "Unknown";
-                    ulong? workingSet = TryRead(() => ToUnsigned(process.WorkingSet64));
-                    ulong? privateBytes = TryRead(() => ToUnsigned(process.PrivateMemorySize64));
-                    TimeSpan? cpuTime = TryRead(() => process.TotalProcessorTime);
-                    IoCounters? io = TryReadIoCounters(processId);
-
-                    observations.Add(new ProcessLifecycleObservation(
-                        Identity: new ProcessIdentity(processId, startedAt.Value),
-                        Name: name,
-                        ParentProcessId: parentIds.TryGetValue(processId, out int parentId) && parentId > 0
-                            ? parentId
-                            : null,
-                        CapturedAt: timestamp,
-                        WorkingSetBytes: workingSet,
-                        PrivateBytes: privateBytes,
-                        TotalCpuTime: cpuTime,
-                        ReadOperationCount: io?.ReadOperationCount,
-                        WriteOperationCount: io?.WriteOperationCount,
-                        ReadTransferBytes: io?.ReadTransferCount,
-                        WriteTransferBytes: io?.WriteTransferCount));
+                if (processId <= 0)
+                {
+                    continue;
                 }
+
+                DateTimeOffset? startedAt = TryRead(() =>
+                    new DateTimeOffset(process.StartTime.ToUniversalTime()));
+
+                if (startedAt is null)
+                {
+                    // Without a creation time, PID reuse cannot be ruled out.
+                    // Such a process is deliberately excluded from lifecycle tracking.
+                    continue;
+                }
+
+                string name = TryRead(() => process.ProcessName) ?? "Unknown";
+                ulong? workingSet = TryRead(() => ToUnsigned(process.WorkingSet64));
+                ulong? privateBytes = TryRead(() => ToUnsigned(process.PrivateMemorySize64));
+                TimeSpan? cpuTime = TryRead(() => process.TotalProcessorTime);
+                IoCounters? io = TryReadIoCounters(processId);
+
+                observations.Add(new ProcessLifecycleObservation(
+                    Identity: new ProcessIdentity(processId, startedAt.Value),
+                    Name: name,
+                    ParentProcessId: parentIds.TryGetValue(processId, out int parentId) && parentId > 0
+                        ? parentId
+                        : null,
+                    CapturedAt: timestamp,
+                    WorkingSetBytes: workingSet,
+                    PrivateBytes: privateBytes,
+                    TotalCpuTime: cpuTime,
+                    ReadOperationCount: io?.ReadOperationCount,
+                    WriteOperationCount: io?.WriteOperationCount,
+                    ReadTransferBytes: io?.ReadTransferCount,
+                    WriteTransferBytes: io?.WriteTransferCount));
+            }
             catch (Exception ex) when (IsExpectedProcessAccessFailure(ex))
             {
                 // Processes can exit or become inaccessible during an inventory pass.
